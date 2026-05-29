@@ -1,8 +1,8 @@
+import logging
 import os
 import re
-import time
 import subprocess
-import logging
+import time
 
 import requests
 
@@ -211,7 +211,8 @@ end tell
             next((g for g in self.cfg.group_priority if current in groups.get(g, [])), None)
             or self.classify_node(current)
         )
-        log.info(f"Current node: {current} (group: {GROUP_NAMES.get(current_group, current_group)})")
+        group_label = GROUP_NAMES.get(current_group, current_group)
+        log.info(f"Current node: {current} (group: {group_label})")
 
         all_nodes = []
         for g in self.cfg.group_priority:

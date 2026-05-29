@@ -8,8 +8,8 @@ PLIST_NAME="com.octopusgarage.net-auto-switch.plist"
 LABEL="com.octopusgarage.net-auto-switch"
 TARGET="$HOME/Library/LaunchAgents/$PLIST_NAME"
 
-echo "[install-launchd] Installing dependencies..."
-python3 -m pip install -e "$PROJECT_DIR"
+echo "[install-launchd] Syncing dependencies via uv (creates .venv)..."
+( cd "$PROJECT_DIR" && uv sync )
 
 if [ ! -f "$PROJECT_DIR/config.toml" ]; then
   echo "[install-launchd] Creating config.toml from example — edit it before relying on it."

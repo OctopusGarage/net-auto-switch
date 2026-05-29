@@ -1,6 +1,6 @@
+import logging
 import re
 import subprocess
-import logging
 
 log = logging.getLogger("net_auto_switch.wifi")
 

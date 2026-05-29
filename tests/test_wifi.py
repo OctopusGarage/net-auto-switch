@@ -1,4 +1,5 @@
 from unittest import mock
+
 from net_auto_switch import wifi
 
 

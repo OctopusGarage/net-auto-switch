@@ -28,23 +28,27 @@ cli.py  (argparse 入口: --once / --dry-run / --config + 日志)
 
 ## Quick Start
 
+本项目用 [uv](https://docs.astral.sh/uv/) 管理虚拟环境与依赖。
+
 ```bash
 cd net-auto-switch
 cp config.example.toml config.toml   # 修改 secret / 端口 / 阈值
-pip install -e ".[dev]"
+uv sync                               # 创建 .venv(Python 由 .python-version 固定)并装依赖
 
 # 手动演练(不实际切换)
-python -m net_auto_switch.cli --once --dry-run
+uv run net-auto-switch --once --dry-run
 ```
 
 ## Usage
 
 ```bash
-python -m net_auto_switch.cli --once --dry-run    # 单轮、演练
-python -m net_auto_switch.cli --once              # 单轮
-python -m net_auto_switch.cli                      # 长驻
-python -m net_auto_switch.cli --config /path/to/config.toml
+uv run net-auto-switch --once --dry-run    # 单轮、演练
+uv run net-auto-switch --once              # 单轮
+uv run net-auto-switch                      # 长驻
+uv run net-auto-switch --config /path/to/config.toml
 ```
+
+`uv run net-auto-switch` 等价于 `uv run python -m net_auto_switch.cli`。
 
 ### 进程管理脚本
 
@@ -125,18 +129,20 @@ net-auto-switch/
 ├── config.example.toml  # 配置模板(config.toml 被 gitignore)
 ├── CONTEXT.md           # 领域术语与不变量
 ├── CLAUDE.md            # 项目原则(给 Claude Code)
-└── pyproject.toml
+├── pyproject.toml       # 依赖 + 工具配置(pytest / ruff)
+├── uv.lock              # uv 锁定的依赖版本(提交入库)
+└── .python-version      # 固定 Python 版本(uv 读取)
 ```
 
 ## Testing
 
 ```bash
-pytest          # 全量单测
-ruff check .    # 静态检查
+uv run pytest          # 全量单测
+uv run ruff check .    # 静态检查
 ```
 
 ## Requirements
 
-- macOS,Python 3.11+
+- macOS,[uv](https://docs.astral.sh/uv/)(自动管理 Python 3.12,见 `.python-version`)
 - Clash Verge 已运行且开启外部控制(API 端口与 secret 与配置一致)
 - WiFi 切换需相应系统权限;profile 兜底依赖"系统设置 → 隐私与安全性 → 辅助功能"授权

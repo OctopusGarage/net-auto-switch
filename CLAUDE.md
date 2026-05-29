@@ -40,8 +40,14 @@ The daemon is a single long-running process, identified by `net_auto_switch.cli`
 
 ## Development Conventions
 
-- `pytest` — run the full suite (configured in `pyproject.toml`).
-- `ruff check .` / `ruff format .` — lint & format.
+This project is managed with **uv**. Always run tools through `uv run` so they use the
+project's pinned interpreter (`.python-version`) and locked deps (`uv.lock`) — never the
+system / conda python (using the wrong interpreter is what broke the launchd agent once).
+
+- `uv sync` — create / update `.venv` from `pyproject.toml` + `uv.lock`.
+- `uv run pytest` — run the full suite (configured in `pyproject.toml`).
+- `uv run ruff check .` / `uv run ruff format .` — lint & format.
+- `uv add <pkg>` / `uv add --dev <pkg>` — add a runtime / dev dependency.
 - **TDD** — write the failing test first; keep pure logic (selection, gating, classification) separate from I/O so it stays unit-testable.
 - **Behavior-equivalence** — the selection/grouping algorithms are a faithful port of the original scripts. Don't change them without recording an ADR.
 

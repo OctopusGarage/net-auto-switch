@@ -1,7 +1,7 @@
 from unittest import mock
 
-from net_auto_switch.config import ClashConfig
 from net_auto_switch.clash import ClashController
+from net_auto_switch.config import ClashConfig
 
 
 def make_ctrl():

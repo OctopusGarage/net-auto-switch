@@ -1,9 +1,9 @@
-import os
-import sys
 import argparse
 import logging
+import os
+import sys
 
-from .config import load_config, ConfigError
+from .config import ConfigError, load_config
 from .orchestrator import Orchestrator
 
 log = logging.getLogger("net_auto_switch.cli")

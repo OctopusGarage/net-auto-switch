@@ -1,6 +1,8 @@
 import textwrap
+
 import pytest
-from net_auto_switch.config import load_config, ConfigError
+
+from net_auto_switch.config import ConfigError, load_config
 
 
 def _write(tmp_path, content):

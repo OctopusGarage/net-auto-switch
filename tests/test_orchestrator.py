@@ -1,5 +1,6 @@
 from unittest import mock
-from net_auto_switch.config import Config, WifiConfig, ClashConfig
+
+from net_auto_switch.config import ClashConfig, Config, WifiConfig
 from net_auto_switch.orchestrator import Orchestrator
 
 
