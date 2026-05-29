@@ -22,8 +22,11 @@
   <key>ThrottleInterval</key>
   <integer>10</integer>
 
+  <!-- Routine logs live in the daily-rotated ~/Library/Logs/net_auto_switch.log,
+       so stdout is discarded to avoid an unbounded duplicate. stderr is kept as a
+       small safety net for crashes that happen before logging is configured. -->
   <key>StandardOutPath</key>
-  <string>__PROJECT_DIR__/logs/launchd.out.log</string>
+  <string>/dev/null</string>
 
   <key>StandardErrorPath</key>
   <string>__PROJECT_DIR__/logs/launchd.err.log</string>

@@ -112,9 +112,11 @@ tail -f logs/launchd.err.log
 
 ## Logs
 
-- 程序日志:`~/Library/Logs/net_auto_switch.log`
-- launchd 捕获:`logs/launchd.out.log` / `logs/launchd.err.log`(launchd 方式运行时)
-- 手动 `start.sh` 捕获:`logs/net-auto-switch.out.log`
+- **程序日志(权威)**:`~/Library/Logs/net_auto_switch.log` —— **每天午夜轮转,保留 14 天**自动清理(`TimedRotatingFileHandler`),不会无限增长。
+- launchd 方式运行时:stdout 丢弃(`/dev/null`,避免与上面的轮转日志重复),`logs/launchd.err.log` 仅捕获日志系统初始化前的崩溃(正常运行时基本为空)。
+- 手动 `start.sh` 运行时:输出追加到 `logs/net-auto-switch.out.log`(开发用)。
+
+保留天数由 `cli.py` 的 `LOG_BACKUP_DAYS` 控制(默认 14)。
 
 ## Project Layout
 

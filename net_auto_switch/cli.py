@@ -1,5 +1,6 @@
 import argparse
 import logging
+import logging.handlers
 import os
 import sys
 
@@ -9,17 +10,22 @@ from .orchestrator import Orchestrator
 log = logging.getLogger("net_auto_switch.cli")
 
 LOG_PATH = os.path.expanduser("~/Library/Logs/net_auto_switch.log")
+LOG_BACKUP_DAYS = 14
 
 
 def _setup_logging():
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    # Rotate the log at midnight and keep LOG_BACKUP_DAYS days, so it never grows
+    # unbounded for a long-running daemon. Routine logs go to stdout (captured as
+    # launchd.out.log); only real errors / pre-logging crashes hit stderr.
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        LOG_PATH, when="midnight", backupCount=LOG_BACKUP_DAYS, encoding="utf-8"
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_PATH),
-            logging.StreamHandler(),
-        ],
+        handlers=[file_handler, logging.StreamHandler(sys.stdout)],
+        force=True,
     )
 
 

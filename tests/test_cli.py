@@ -60,3 +60,28 @@ def test_main_logs_startup_context():
     messages = [c.args[0] for c in log.info.call_args_list if c.args]
     assert any("Starting net-auto-switch" in m for m in messages)
     assert any("dry_run=True" in m for m in messages)
+
+
+def test_setup_logging_uses_daily_rotation(tmp_path, monkeypatch):
+    import logging
+    import logging.handlers
+
+    root = logging.getLogger()
+    saved = root.handlers[:]
+    logpath = tmp_path / "logs" / "nas.log"
+    monkeypatch.setattr(cli, "LOG_PATH", str(logpath))
+    try:
+        cli._setup_logging()
+        rotating = [
+            h for h in root.handlers
+            if isinstance(h, logging.handlers.TimedRotatingFileHandler)
+        ]
+        assert rotating, "expected a TimedRotatingFileHandler on the root logger"
+        assert rotating[0].backupCount == cli.LOG_BACKUP_DAYS
+        assert rotating[0].when == "MIDNIGHT"
+        assert logpath.parent.is_dir()
+    finally:
+        for h in root.handlers:
+            if isinstance(h, logging.handlers.TimedRotatingFileHandler):
+                h.close()
+        root.handlers[:] = saved
