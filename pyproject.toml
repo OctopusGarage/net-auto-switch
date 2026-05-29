@@ -1,0 +1,43 @@
+[project]
+name = "net-auto-switch"
+version = "0.1.0"
+description = "Layered WiFi + Clash Verge auto-switch daemon for macOS"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Kingson Wu" }]
+keywords = ["macos", "clash", "clash-verge", "wifi", "networking", "daemon", "launchd"]
+classifiers = [
+    "Environment :: MacOS X",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Networking",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "requests>=2.28",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+
+[project.scripts]
+net-auto-switch = "net_auto_switch.cli:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["net_auto_switch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]

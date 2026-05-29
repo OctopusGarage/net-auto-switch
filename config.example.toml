@@ -1,0 +1,26 @@
+main_interval = 600          # 主循环间隔(秒)
+
+[wifi]
+enabled = true
+check_interval = 3600        # WiFi 检查间隔(秒)
+switch_cooldown = 7200       # WiFi 切换后冷却(秒)
+bad_latency_ms = 200
+bad_loss_pct = 5
+min_improvement_ms = 100
+interface = "en0"
+
+[clash]
+api = "http://127.0.0.1:9097"
+secret = "your-clash-api-secret"
+proxy_port = 7890
+delay_limit = 300            # 当前节点稳定阈值(ms)
+max_switch_per_min = 3
+max_profile_switch_per_30min = 1
+profiles_yaml = "~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles.yaml"
+group_priority = ["SG", "Tokyo", "JP_Other"]
+
+[clash.patterns]
+sg = "(SG|Singapore|新加坡|🇸🇬)"
+jp = "(JP|Japan|日本|🇯🇵)"
+tokyo = "(Tokyo|东京)"
+trial = "试用"
