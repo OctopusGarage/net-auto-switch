@@ -3,24 +3,23 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/OctopusGarage/net-auto-switch/main/install.sh | bash
 #
-# Installs uv (if missing), clones the repo to ~/.net-auto-switch (override with
-# NET_AUTO_SWITCH_DIR), syncs deps, drops a global `net-auto-switch` launcher,
-# and runs the guided `init` wizard. Re-running it updates an existing install.
+# Installs uv (if missing), downloads the latest release tarball to
+# ~/.net-auto-switch (override with NET_AUTO_SWITCH_DIR), syncs deps, drops a
+# global `net-auto-switch` launcher, and runs the guided `init` wizard.
+# Re-running it updates an existing install. Pin a version with
+# NET_AUTO_SWITCH_VERSION=v0.3.3.
 set -euo pipefail
 
-REPO="https://github.com/OctopusGarage/net-auto-switch.git"
+REPO="OctopusGarage/net-auto-switch"
 INSTALL_DIR="${NET_AUTO_SWITCH_DIR:-$HOME/.net-auto-switch}"
 BIN_DIR="$HOME/.local/bin"
+VERSION="${NET_AUTO_SWITCH_VERSION:-latest}"
 
 info() { printf '\033[1;34m=>\033[0m %s\n' "$*"; }
 err() { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; }
 
 [ "$(uname)" = "Darwin" ] || {
   err "net-auto-switch is macOS-only."
-  exit 1
-}
-command -v git >/dev/null 2>&1 || {
-  err "git not found - install the Xcode Command Line Tools: xcode-select --install"
   exit 1
 }
 
@@ -35,27 +34,42 @@ command -v uv >/dev/null 2>&1 || {
   exit 1
 }
 
-# 2. clone or update (in place; never deletes - config.toml is gitignored/preserved)
-if [ -d "$INSTALL_DIR/.git" ]; then
-  info "Found existing install at $INSTALL_DIR, updating..."
-  if ! git -C "$INSTALL_DIR" pull --ff-only; then
-    err "Couldn't fast-forward $INSTALL_DIR (local changes to tracked files, or"
-    err "diverged history). Your config.toml is untracked and will be preserved."
-    err "Reset it to the latest and re-run this installer:"
-    err "  git -C \"$INSTALL_DIR\" fetch origin && git -C \"$INSTALL_DIR\" reset --hard origin/main"
+# 2. resolve the release tag (follow the /releases/latest redirect; no jq needed)
+if [ "$VERSION" = "latest" ]; then
+  url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+    "https://github.com/$REPO/releases/latest") || {
+    err "Couldn't reach GitHub to resolve the latest release."
     exit 1
-  fi
+  }
+  TAG="${url##*/}"
 else
-  info "Cloning into $INSTALL_DIR..."
-  git clone "$REPO" "$INSTALL_DIR"
+  TAG="$VERSION"
 fi
+case "$TAG" in
+  v*) ;;
+  *) err "Couldn't resolve a release tag (got '$TAG')."; exit 1 ;;
+esac
+
+# 3. download + extract the filtered release tarball into INSTALL_DIR.
+#    config.toml is gitignored, so it's absent from the archive and preserved.
+info "Downloading $TAG..."
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "https://github.com/$REPO/archive/refs/tags/${TAG}.tar.gz" -o "$tmp/release.tar.gz" || {
+  err "Download failed for $TAG."
+  exit 1
+}
+# Migrate a previous git-clone install: drop its VCS metadata, keep .venv/config.toml.
+[ -d "$INSTALL_DIR/.git" ] && rm -rf "$INSTALL_DIR/.git"
+mkdir -p "$INSTALL_DIR"
+tar -xzf "$tmp/release.tar.gz" --strip-components=1 -C "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
-# 3. dependencies
+# 4. dependencies
 info "Syncing dependencies..."
 uv sync
 
-# 4. global launcher, so `net-auto-switch ...` works from anywhere
+# 5. global launcher, so `net-auto-switch ...` works from anywhere
 info "Installing launcher to $BIN_DIR/net-auto-switch..."
 mkdir -p "$BIN_DIR"
 cat >"$BIN_DIR/net-auto-switch" <<EOF
@@ -64,7 +78,7 @@ exec uv run --project "$INSTALL_DIR" net-auto-switch "\$@"
 EOF
 chmod +x "$BIN_DIR/net-auto-switch"
 
-# 5. guided setup - read prompts from the terminal even when piped via curl
+# 6. guided setup - read prompts from the terminal even when piped via curl
 info "Starting guided setup..."
 if [ -e /dev/tty ]; then
   "$BIN_DIR/net-auto-switch" init </dev/tty
@@ -72,7 +86,7 @@ else
   "$BIN_DIR/net-auto-switch" init --yes
 fi
 
-info "Done. Installed at $INSTALL_DIR"
+info "Done. Installed $TAG at $INSTALL_DIR"
 info "Update later with:  net-auto-switch update"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

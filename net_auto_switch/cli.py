@@ -2,9 +2,11 @@ import argparse
 import logging
 import logging.handlers
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 from .clash import ClashController
@@ -31,6 +33,73 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LAUNCHD_LABEL = "com.octopusgarage.net-auto-switch"
 LAUNCHD_PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCHD_LABEL}.plist")
 INSTALL_LAUNCHD = os.path.join(PROJECT_DIR, "scripts", "install-launchd.sh")
+REPO = "OctopusGarage/net-auto-switch"
+
+
+def _tag_from_release_url(url):
+    """'.../releases/tag/v0.3.3' (optionally trailing /) -> 'v0.3.3'."""
+    return url.rstrip("/").rsplit("/", 1)[-1]
+
+
+def _version_tuple(v):
+    """'v0.3.10' -> (0, 3, 10); ignores any non-numeric suffix."""
+    return tuple(int(n) for n in re.findall(r"\d+", v))
+
+
+def _is_newer(candidate, current):
+    return _version_tuple(candidate) > _version_tuple(current)
+
+
+def _installed_version():
+    try:
+        import tomllib
+
+        with open(os.path.join(PROJECT_DIR, "pyproject.toml"), "rb") as f:
+            return tomllib.load(f)["project"]["version"]
+    except Exception:
+        return None
+
+
+def _resolve_latest_tag():
+    """Resolve the latest release tag by following the /releases/latest redirect."""
+    try:
+        r = subprocess.run(
+            [
+                "curl",
+                "-fsSLI",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{url_effective}",
+                f"https://github.com/{REPO}/releases/latest",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if r.returncode != 0:
+            return None
+        tag = _tag_from_release_url(r.stdout.strip())
+        return tag if tag.startswith("v") else None
+    except Exception:
+        return None
+
+
+def _download_release(tag, dest):
+    """Download the (export-ignore filtered) source tarball for `tag` and extract
+    it over `dest`. config.toml is gitignored, so it's absent from the archive and
+    left untouched."""
+    url = f"https://github.com/{REPO}/archive/refs/tags/{tag}.tar.gz"
+    tmp = tempfile.mkdtemp()
+    try:
+        tarball = os.path.join(tmp, "release.tar.gz")
+        if subprocess.run(["curl", "-fsSL", url, "-o", tarball]).returncode != 0:
+            return False
+        os.makedirs(dest, exist_ok=True)
+        extract = ["tar", "-xzf", tarball, "--strip-components=1", "-C", dest]
+        return subprocess.run(extract).returncode == 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _setup_logging():
@@ -216,17 +285,26 @@ def cmd_init(argv):
 
 
 def cmd_update(argv):
-    """Update an existing install: pull latest, re-sync deps, reload the service."""
+    """Update an existing install: download the latest release, re-sync, reload."""
     p = argparse.ArgumentParser(prog="net-auto-switch update", description="Update to latest")
     p.add_argument("--no-restart", action="store_true", help="Don't reload the launchd service")
+    p.add_argument("--force", action="store_true", help="Reinstall even if already current")
+    p.add_argument("--version", default=None, help="Install a specific tag (default: latest)")
     args = p.parse_args(argv)
 
-    print("⬇️  Pulling latest changes…")
-    if subprocess.run(["git", "-C", PROJECT_DIR, "pull", "--ff-only"]).returncode != 0:
-        print("✗ Couldn't fast-forward — local changes to tracked files or diverged history.")
-        print("  Your config.toml is untracked and will be preserved. Reset and retry with:")
-        print(f"  git -C {PROJECT_DIR} fetch origin")
-        print(f"  git -C {PROJECT_DIR} reset --hard origin/main")
+    target = args.version or _resolve_latest_tag()
+    if not target:
+        print("✗ Couldn't determine the latest release (network issue?).")
+        return 1
+
+    installed = _installed_version()
+    if not args.force and not args.version and installed and not _is_newer(target, installed):
+        print(f"✓ Already up to date (v{installed}).")
+        return 0
+
+    print(f"⬇️  Downloading {target}…")
+    if not _download_release(target, PROJECT_DIR):
+        print(f"✗ Couldn't download/extract {target}. Your install is unchanged.")
         return 1
 
     if not args.no_restart and os.path.exists(LAUNCHD_PLIST):

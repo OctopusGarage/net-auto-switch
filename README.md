@@ -53,9 +53,10 @@ See [`CONTEXT.md`](CONTEXT.md) (domain glossary & invariants) and [`docs/adr/`](
 curl -fsSL https://raw.githubusercontent.com/OctopusGarage/net-auto-switch/main/install.sh | bash
 ```
 
-Installs [uv](https://docs.astral.sh/uv/) if needed, clones into `~/.net-auto-switch`,
-syncs deps, adds a global `net-auto-switch` command, and runs the guided `init`
-wizard. Re-run it any time — it updates an existing install.
+Installs [uv](https://docs.astral.sh/uv/) if needed, downloads the **latest release**
+into `~/.net-auto-switch`, syncs deps, adds a global `net-auto-switch` command, and
+runs the guided `init` wizard. Re-run it any time — it updates an existing install.
+Pin a version with `NET_AUTO_SWITCH_VERSION=v0.3.4`.
 
 ### Manual install
 
@@ -99,10 +100,13 @@ uv run net-auto-switch --once --dry-run
 ### Updating
 
 ```bash
-net-auto-switch update    # pull latest, re-sync deps, reload the launchd service
+net-auto-switch update    # download the latest release, re-sync deps, reload the service
 ```
 
-(For a manual clone: `git pull && uv sync`, then re-run `./scripts/install-launchd.sh`.)
+Updates pull the latest published release (skipping the download if you're already
+current); `--version vX.Y.Z` installs a specific release and `--force` reinstalls.
+`config.toml` is never touched. (For a manual clone: `git pull && uv sync`, then
+re-run `./scripts/install-launchd.sh`.)
 
 ## Usage
 

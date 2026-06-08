@@ -1,7 +1,7 @@
 # ADR-0006: Distribution via curl installer + `update`, not binaries
 
 **Date:** 2026-06-08
-**Status:** Accepted
+**Status:** Accepted (delivery mechanism amended by [ADR-0011](0011-install-from-release-tarball.md) — install/update now pull the latest release tarball instead of `git clone`/`git pull` on `main`; the in-place uv-run model here is unchanged)
 
 ## Context
 

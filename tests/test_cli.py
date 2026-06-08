@@ -167,29 +167,50 @@ def test_main_update_dispatches_to_cmd_update():
     cu.assert_called_once_with([])
 
 
-def test_cmd_update_pull_failure_returns_nonzero(monkeypatch):
-    def fake_run(cmd, **kw):
-        if cmd[:2] == ["git", "-C"]:
-            return mock.Mock(returncode=1)
-        return mock.Mock(returncode=0)
+def test_tag_from_release_url():
+    assert cli._tag_from_release_url("https://github.com/o/r/releases/tag/v0.3.3") == "v0.3.3"
+    assert cli._tag_from_release_url("https://github.com/o/r/releases/tag/v1.2.0/") == "v1.2.0"
 
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+def test_version_tuple_and_is_newer():
+    assert cli._version_tuple("v0.3.10") == (0, 3, 10)
+    assert cli._is_newer("v0.3.10", "0.3.9") is True
+    assert cli._is_newer("v0.3.3", "0.3.3") is False
+    assert cli._is_newer("v0.2.0", "0.3.0") is False
+
+
+def test_cmd_update_already_current_skips_download(monkeypatch):
+    monkeypatch.setattr(cli, "_resolve_latest_tag", lambda: "v0.3.3")
+    monkeypatch.setattr(cli, "_installed_version", lambda: "0.3.3")
+    dl = mock.Mock()
+    monkeypatch.setattr(cli, "_download_release", dl)
+    assert cli.cmd_update([]) == 0
+    dl.assert_not_called()
+
+
+def test_cmd_update_downloads_when_outdated_and_reloads_service(monkeypatch):
+    monkeypatch.setattr(cli, "_resolve_latest_tag", lambda: "v0.4.0")
+    monkeypatch.setattr(cli, "_installed_version", lambda: "0.3.3")
+    monkeypatch.setattr(cli, "_download_release", lambda tag, dest: True)
+    monkeypatch.setattr(cli.os.path, "exists", lambda p: True)  # launchd plist present
+    calls = []
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or mock.Mock(returncode=0)
+    )
+    assert cli.cmd_update([]) == 0
+    assert ["bash", cli.INSTALL_LAUNCHD] in calls  # reloaded via launchd installer
+
+
+def test_cmd_update_download_failure_returns_nonzero(monkeypatch):
+    monkeypatch.setattr(cli, "_resolve_latest_tag", lambda: "v0.4.0")
+    monkeypatch.setattr(cli, "_installed_version", lambda: "0.3.3")
+    monkeypatch.setattr(cli, "_download_release", lambda tag, dest: False)
     assert cli.cmd_update([]) == 1
 
 
-def test_cmd_update_syncs_when_service_absent(monkeypatch):
-    calls = []
-
-    def fake_run(cmd, **kw):
-        calls.append(cmd)
-        return mock.Mock(returncode=0)
-
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
-    monkeypatch.setattr(cli.os.path, "exists", lambda p: False)  # no launchd plist
-
-    assert cli.cmd_update([]) == 0
-    assert ["git", "-C", cli.PROJECT_DIR, "pull", "--ff-only"] in calls
-    assert any(c[0] == "uv" and "sync" in c for c in calls)
+def test_cmd_update_unresolvable_latest_returns_nonzero(monkeypatch):
+    monkeypatch.setattr(cli, "_resolve_latest_tag", lambda: None)
+    assert cli.cmd_update([]) == 1
 
 
 def test_setup_logging_uses_daily_rotation(tmp_path, monkeypatch):
