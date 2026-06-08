@@ -92,6 +92,7 @@ def test_cmd_init_writes_valid_config(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(cli, "detect_clash_verge", lambda: det)
     monkeypatch.setattr(cli, "probe_api", lambda api, secret: "1.0")
+    monkeypatch.setattr(cli, "health_check", lambda api, secret: (5, 10))
     monkeypatch.setattr(cli, "ClashController", mock.Mock())  # node preview is best-effort
 
     out = tmp_path / "config.toml"
@@ -106,6 +107,22 @@ def test_cmd_init_writes_valid_config(tmp_path, monkeypatch):
 def test_cmd_init_missing_verge_returns_nonzero(monkeypatch):
     monkeypatch.setattr(cli, "detect_clash_verge", lambda: None)
     assert cli.cmd_init(["--yes", "--no-service"]) == 1
+
+
+def test_cmd_init_aborts_when_no_reachable_nodes(tmp_path, monkeypatch):
+    from net_auto_switch.setup import DetectedClash
+
+    det = DetectedClash(
+        api="http://127.0.0.1:9097", secret="abc", proxy_port=7890, profiles_yaml="p.yaml"
+    )
+    monkeypatch.setattr(cli, "detect_clash_verge", lambda: det)
+    monkeypatch.setattr(cli, "probe_api", lambda api, secret: "1.0")
+    monkeypatch.setattr(cli, "health_check", lambda api, secret: (0, 8))  # all nodes down
+    monkeypatch.setattr(cli, "_confirm", lambda *a, **k: False)  # decline "continue anyway?"
+
+    out = tmp_path / "config.toml"
+    assert cli.cmd_init(["--no-service", "--config", str(out)]) == 1
+    assert not out.exists()  # aborted before writing
 
 
 def test_main_update_dispatches_to_cmd_update():

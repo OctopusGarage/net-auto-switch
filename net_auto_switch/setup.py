@@ -73,6 +73,24 @@ def probe_api(api, secret, timeout=5):
     return r.json().get("version", "unknown")
 
 
+def health_check(api, secret, group="GLOBAL", timeout_ms=5000):
+    """Concurrently delay-test a proxy group via the core API. Returns
+    (reachable, total). Raises if the group/endpoint is unavailable."""
+    import requests
+
+    headers = {"Authorization": f"Bearer {secret}"} if secret else {}
+    r = requests.get(
+        f"{api}/group/{group}/delay",
+        headers=headers,
+        params={"url": "http://www.gstatic.com/generate_204", "timeout": timeout_ms},
+        timeout=timeout_ms / 1000 + 10,
+    )
+    r.raise_for_status()
+    delays = r.json()
+    reachable = sum(1 for v in delays.values() if isinstance(v, int) and v > 0)
+    return reachable, len(delays)
+
+
 _TEMPLATE = """\
 main_interval = 600          # main loop interval (s)
 

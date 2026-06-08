@@ -14,6 +14,7 @@ from .setup import (
     REGION_CATALOG,
     detect_clash_verge,
     detect_regions,
+    health_check,
     probe_api,
     render_config_toml,
 )
@@ -80,6 +81,23 @@ def cmd_init(argv):
         print("  Is Clash Verge running with external control enabled?")
         if not args.yes and not _confirm("Continue anyway?", default=False):
             return 1
+
+    # Health gate: make sure the subscription actually has working nodes before
+    # we finish setup. We can't reliably trigger a Clash Verge subscription update
+    # from here (see ADR-0009), so on failure we point the user at the fix.
+    try:
+        reachable, total = health_check(detected.api, detected.secret)
+        print(f"✓ Health check: {reachable}/{total} nodes reachable")
+        if reachable == 0:
+            print(
+                "⚠ No reachable nodes. In Clash Verge, update your subscription "
+                "(right-click the profile → Update) or check that it hasn't expired, "
+                "then re-run this."
+            )
+            if not args.yes and not _confirm("Continue setup anyway?", default=False):
+                return 1
+    except Exception as e:
+        print(f"⚠ Health check skipped ({e})")
 
     group_priority = list(ClashConfig.__dataclass_fields__["group_priority"].default_factory())
     regions = None
