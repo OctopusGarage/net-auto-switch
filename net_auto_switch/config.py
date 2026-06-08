@@ -39,6 +39,10 @@ class ClashConfig:
     api: str = "http://127.0.0.1:9097"
     secret: str = ""
     proxy_port: int = 7890
+    # Clash proxy group the daemon reads + switches. "auto" resolves it per cycle
+    # from the live Clash mode (global -> GLOBAL, direct -> skip, rule -> the group
+    # most connections route through). Set a literal group name to force one.
+    managed_group: str = "auto"
     delay_limit: int = 300
     max_switch_per_min: int = 3
     max_profile_switch_per_30min: int = 1
@@ -121,6 +125,8 @@ def _validate(cfg):
         raise ConfigError("wifi.switch_cooldown must be >= 0")
     if not (0 < cfg.clash.proxy_port < 65536):
         raise ConfigError("clash.proxy_port out of range")
+    if not cfg.clash.managed_group:
+        raise ConfigError("clash.managed_group must be a non-empty group name")
     if not cfg.clash.regions:
         raise ConfigError("clash.regions must define at least one region")
     for g in cfg.clash.group_priority:

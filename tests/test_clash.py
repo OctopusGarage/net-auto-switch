@@ -113,6 +113,7 @@ def test_run_cycle_dry_run_does_not_enrich_or_switch():
     }
     with (
         mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="global"),
         mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}),
         mock.patch.object(c, "enrich_via_ip") as enrich,
         mock.patch.object(c, "switch_proxy") as switch,
@@ -125,6 +126,108 @@ def test_run_cycle_dry_run_does_not_enrich_or_switch():
     assert result is False
 
 
+def test_switch_proxy_targets_given_group():
+    c = make_ctrl()
+    with mock.patch("net_auto_switch.clash.requests.put") as put:
+        put.return_value.status_code = 204
+        ok = c.switch_proxy("node-x", "Proxy")
+    assert ok
+    assert put.call_args[0][0].endswith("/proxies/Proxy")
+    assert put.call_args[1]["json"] == {"name": "node-x"}
+
+
+# ----- managed group resolution -----
+
+
+def test_resolve_explicit_override_wins_without_reading_mode():
+    c = ClashController(ClashConfig(secret="x", managed_group="Proxy"))
+    with mock.patch.object(c, "get_mode") as get_mode:
+        assert c.resolve_managed_group({}) == "Proxy"
+    get_mode.assert_not_called()
+
+
+def test_resolve_global_mode_uses_global():
+    c = make_ctrl()  # managed_group defaults to "auto"
+    with mock.patch.object(c, "get_mode", return_value="global"):
+        assert c.resolve_managed_group({}) == "GLOBAL"
+
+
+def test_resolve_direct_mode_skips():
+    c = make_ctrl()
+    with mock.patch.object(c, "get_mode", return_value="direct"):
+        assert c.resolve_managed_group({}) is None
+
+
+def test_resolve_rule_mode_detects_busiest_entry_group():
+    c = make_ctrl()
+    proxies = {
+        "Proxy": {"type": "Selector", "now": "n1"},
+        "Auto": {"type": "URLTest", "now": "n1"},
+    }
+    conns = [
+        {"chains": ["n1", "Proxy"]},
+        {"chains": ["n2", "Proxy"]},
+        {"chains": ["n3", "Auto"]},  # URLTest, not a Selector -> ignored
+        {"chains": ["DIRECT"]},  # no group -> ignored
+    ]
+    with (
+        mock.patch.object(c, "get_mode", return_value="rule"),
+        mock.patch.object(c, "get_connections", return_value=conns),
+    ):
+        assert c.resolve_managed_group(proxies) == "Proxy"
+
+
+def test_resolve_rule_mode_falls_back_to_global_when_no_connections():
+    c = make_ctrl()
+    with (
+        mock.patch.object(c, "get_mode", return_value="rule"),
+        mock.patch.object(c, "get_connections", return_value=[]),
+    ):
+        assert c.resolve_managed_group({"GLOBAL": {"type": "Selector"}}) == "GLOBAL"
+
+
+def test_run_cycle_switches_resolved_managed_group():
+    # GLOBAL points at a healthy node, but the rule-mode entry group `Proxy` is
+    # stuck on a dead one — the daemon must follow the resolved group, not GLOBAL.
+    c = ClashController(ClashConfig(secret="x", ip_enrich={}))  # auto
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP Tokyo good"},
+        "Proxy": {"type": "Selector", "now": "JP Tokyo dead"},
+        "JP Tokyo dead": {"type": "Vmess"},
+        "JP Tokyo good": {"type": "Vmess"},
+    }
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="rule"),
+        mock.patch.object(
+            c, "get_connections", return_value=[{"chains": ["JP Tokyo dead", "Proxy"]}]
+        ),
+        mock.patch.object(
+            c,
+            "test_all_delays",
+            return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
+        ),
+        mock.patch.object(c, "switch_proxy") as switch,
+    ):
+        c.run_cycle(dry_run=False)
+    switch.assert_called_once_with("JP Tokyo good", "Proxy")
+
+
+def test_run_cycle_missing_managed_group_skips_without_switching():
+    c = ClashController(ClashConfig(secret="x", managed_group="Proxy", ip_enrich={}))
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "jp1"},
+        "jp1": {"type": "Vmess"},  # name "jp1" -> JP_Other, so groups are non-empty
+    }
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "switch_proxy") as switch,
+    ):
+        result = c.run_cycle(dry_run=False)
+    switch.assert_not_called()
+    assert result is False
+
+
 def test_run_cycle_non_dry_run_enriches_when_no_tokyo():
     c = make_ctrl()
     proxies = {
@@ -133,6 +236,7 @@ def test_run_cycle_non_dry_run_enriches_when_no_tokyo():
     }
     with (
         mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="global"),
         mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}),
         mock.patch.object(c, "enrich_via_ip") as enrich,
         mock.patch.object(c, "switch_proxy"),

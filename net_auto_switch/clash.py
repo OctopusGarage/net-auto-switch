@@ -39,14 +39,30 @@ class ClashController:
         except Exception:
             return DEAD
 
-    def switch_proxy(self, node):
+    def switch_proxy(self, node, group):
         r = requests.put(
-            f"{self.cfg.api}/proxies/GLOBAL",
+            f"{self.cfg.api}/proxies/{group}",
             headers=self.headers,
             json={"name": node},
             timeout=5,
         )
         return r.status_code == 204
+
+    def get_mode(self):
+        try:
+            r = requests.get(f"{self.cfg.api}/configs", headers=self.headers, timeout=5)
+            return r.json().get("mode")
+        except Exception as e:
+            log.warning(f"Failed to read Clash mode: {e}")
+            return None
+
+    def get_connections(self):
+        try:
+            r = requests.get(f"{self.cfg.api}/connections", headers=self.headers, timeout=5)
+            return r.json().get("connections") or []
+        except Exception as e:
+            log.warning(f"Failed to read Clash connections: {e}")
+            return []
 
     def test_all_delays(self, node_list):
         delays = {}
@@ -75,9 +91,9 @@ class ClashController:
                 groups[group].append(name)
         return groups
 
-    def get_node_region(self, node_name):
+    def get_node_region(self, node_name, group):
         try:
-            self.switch_proxy(node_name)
+            self.switch_proxy(node_name, group)
             time.sleep(0.5)
             proxies_cfg = {
                 "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
@@ -89,11 +105,12 @@ class ClashController:
             log.warning(f"Location check error: {e}")
             return ""
 
-    def enrich_via_ip(self, groups):
+    def enrich_via_ip(self, groups, group):
         """Reclassify `source` nodes whose IP geolocates to `match` into `target`.
 
         Config-driven via cfg.ip_enrich; a no-op if it's unset or its regions
-        aren't present (e.g. a US-only setup with no Tokyo region).
+        aren't present (e.g. a US-only setup with no Tokyo region). Probes by
+        temporarily pointing `group` (the managed group) at each candidate.
         """
         ie = self.cfg.ip_enrich or {}
         target, source = ie.get("target"), ie.get("source")
@@ -107,12 +124,59 @@ class ClashController:
         check_count = min(len(candidates), 10)
         for i, node in enumerate(candidates[:check_count], 1):
             log.info(f"  [{i}/{check_count}] Checking {node}...")
-            region = self.get_node_region(node)
+            region = self.get_node_region(node, group)
             if region and region.lower() == match:
                 log.info(f"  -> {node} is {target}")
                 groups[target].append(node)
                 groups[source].remove(node)
             time.sleep(0.3)
+
+    # ----- managed group resolution -----
+    def detect_entry_group(self, proxies):
+        """The Selector group most live connections enter through.
+
+        Each connection's `chains` runs node-first to entry-group-last, so the
+        last element is the group the rules routed it to. Returns the busiest
+        such Selector, or None when there are no proxied connections to learn from.
+        """
+        counts = {}
+        for c in self.get_connections():
+            chain = c.get("chains") or []
+            if len(chain) < 2:
+                continue  # DIRECT / direct node — no proxy group involved
+            entry = chain[-1]
+            g = proxies.get(entry)
+            if g and g.get("type") == "Selector":
+                counts[entry] = counts.get(entry, 0) + 1
+        if not counts:
+            return None
+        return max(counts, key=lambda name: counts[name])
+
+    def resolve_managed_group(self, proxies):
+        """Pick the proxy group to read + switch, or None to skip this cycle.
+
+        An explicit cfg.managed_group (anything but "auto") always wins. Otherwise
+        resolve by Clash mode: global -> GLOBAL; direct -> skip; rule -> the entry
+        group most live connections use, falling back to GLOBAL with a warning.
+        """
+        override = self.cfg.managed_group
+        if override and override != "auto":
+            return override
+        mode = self.get_mode()
+        if mode == "global":
+            return "GLOBAL"
+        if mode == "direct":
+            log.info("Clash in direct mode — no proxy to manage, skipping cycle.")
+            return None
+        entry = self.detect_entry_group(proxies)
+        if entry:
+            log.info(f"Rule mode: managing '{entry}' (busiest entry group in live connections)")
+            return entry
+        log.warning(
+            f"Rule mode but no entry group detected from connections (mode={mode}); "
+            "falling back to GLOBAL."
+        )
+        return "GLOBAL"
 
     # ----- selection -----
     def select_best_in_group(self, group_nodes, delays):
@@ -196,11 +260,22 @@ end tell
         for g in self.cfg.group_priority:
             log.info(f"{g} nodes: {len(groups.get(g, []))}")
 
+        group = self.resolve_managed_group(proxies)
+        if group is None:
+            return False
+        if group not in proxies:
+            selectors = [n for n, d in proxies.items() if d.get("type") == "Selector"]
+            log.error(
+                f"Managed group '{group}' not found in Clash (available selectors: {selectors}). "
+                f"Set clash.managed_group to the group your rules route through."
+            )
+            return False
+
         enrich_target = (self.cfg.ip_enrich or {}).get("target")
         if enrich_target and not groups.get(enrich_target) and not dry_run:
-            self.enrich_via_ip(groups)
+            self.enrich_via_ip(groups, group)
 
-        current = proxies["GLOBAL"]["now"]
+        current = proxies[group]["now"]
         current_group = next(
             (g for g in self.cfg.group_priority if current in groups.get(g, [])), None
         ) or self.classify_node(current)
@@ -241,7 +316,7 @@ end tell
                 log.info("Switch limit reached (per minute)")
             elif dry_run:
                 log.info(f"[DRY-RUN] Would switch to {target}")
-            elif self.switch_proxy(target):
+            elif self.switch_proxy(target, group):
                 self._switch_times.append(now)
                 log.info(f"Switched to {target}")
             else:

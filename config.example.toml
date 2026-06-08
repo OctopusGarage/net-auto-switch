@@ -13,6 +13,10 @@ interface = "en0"
 api = "http://127.0.0.1:9097"
 secret = "your-clash-api-secret"
 proxy_port = 7890
+managed_group = "auto"       # 守护进程读取/切换的代理组。"auto" 每轮按 Clash 当前
+                             # 模式自动判定:global→GLOBAL,direct→跳过,
+                             # rule→从实时连接探测主入口组(探不到则回退 GLOBAL)。
+                             # 填具体组名(如 "Proxy")可强制固定某个组。
 delay_limit = 300            # 当前节点稳定阈值(ms)
 max_switch_per_min = 3
 max_profile_switch_per_30min = 1
