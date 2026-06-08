@@ -9,7 +9,14 @@ import sys
 from .clash import ClashController
 from .config import ClashConfig, ConfigError, load_config
 from .orchestrator import Orchestrator
-from .setup import CLASH_VERGE_DIR, detect_clash_verge, probe_api, render_config_toml
+from .setup import (
+    CLASH_VERGE_DIR,
+    REGION_CATALOG,
+    detect_clash_verge,
+    detect_regions,
+    probe_api,
+    render_config_toml,
+)
 
 log = logging.getLogger("net_auto_switch.cli")
 
@@ -75,20 +82,39 @@ def cmd_init(argv):
             return 1
 
     group_priority = list(ClashConfig.__dataclass_fields__["group_priority"].default_factory())
+    regions = None
     try:
         ctrl = ClashController(
             ClashConfig(api=detected.api, secret=detected.secret, proxy_port=detected.proxy_port)
         )
-        groups = ctrl.get_all_nodes_by_group(ctrl.get_proxies())
-        summary = ", ".join(f"{g} x{len(groups.get(g, []))}" for g in group_priority)
-        print(f"  Detected node groups: {summary}")
+        names = [
+            n
+            for n, d in ctrl.get_proxies().items()
+            if d.get("type") not in ("Selector", "URLTest", "Fallback")
+        ]
+        counts = detect_regions(names)
+        if counts:
+            print("  Regions found in your subscription:")
+            for name, c in counts.items():
+                print(f"    {name:8} x{c}")
+            chosen = list(counts)  # default: all detected, most-common first
+            if not args.yes:
+                ans = input(
+                    f"  Priority order {chosen} (Enter to accept, or comma-separated subset): "
+                ).strip()
+                if ans:
+                    chosen = [s.strip() for s in ans.split(",") if s.strip()]
+            # Build regions in catalog order (specific-first) for correct matching;
+            # group_priority keeps the user's chosen order for fallback.
+            sel_regions = {n: REGION_CATALOG[n] for n in REGION_CATALOG if n in chosen}
+            sel_priority = [n for n in chosen if n in REGION_CATALOG]
+            unknown = [n for n in chosen if n not in REGION_CATALOG]
+            if unknown:
+                print(f"  ⚠ ignored (not in region catalog): {unknown}")
+            if sel_regions:
+                regions, group_priority = sel_regions, sel_priority
     except Exception:
-        pass  # preview is best-effort; the wizard works without it
-
-    if not args.yes:
-        ans = input(f"Region priority {group_priority} (Enter to accept): ").strip()
-        if ans:
-            group_priority = [s.strip() for s in ans.split(",") if s.strip()]
+        pass  # detection is best-effort; falls back to the default regions
 
     out = args.config
     if os.path.exists(out):
@@ -96,7 +122,7 @@ def cmd_init(argv):
         shutil.copy2(out, backup)
         print(f"• Backed up existing {out} -> {backup}")
     with open(out, "w", encoding="utf-8") as f:
-        f.write(render_config_toml(detected, group_priority))
+        f.write(render_config_toml(detected, group_priority, regions))
     print(f"✓ Wrote {out}")
 
     try:

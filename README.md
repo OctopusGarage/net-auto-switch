@@ -72,9 +72,10 @@ ships an auto-generated source tarball / zip.
 ### Guided setup (`init`)
 
 `init` reads your Clash Verge config to **auto-detect** the API endpoint, secret,
-proxy port, and `profiles.yaml` path, verifies the connection, previews your node
-groups, writes `config.toml` (backing up any existing one), and offers to install
-the launchd service:
+proxy port, and `profiles.yaml` path, verifies the connection, **scans your
+subscription's actual nodes to detect which regions you have (US, JP, HK, …) and
+lets you choose which to prioritize**, writes `config.toml` (backing up any
+existing one), and offers to install the launchd service:
 
 ```bash
 uv run net-auto-switch init          # interactive

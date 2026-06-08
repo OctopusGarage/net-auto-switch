@@ -2,6 +2,7 @@ from net_auto_switch.config import load_config
 from net_auto_switch.setup import (
     DetectedClash,
     detect_clash_verge,
+    detect_regions,
     parse_verge_runtime,
     render_config_toml,
 )
@@ -64,3 +65,26 @@ def test_render_config_toml_roundtrips(tmp_path):
     # defaults preserved for untouched sections
     assert cfg.wifi.enabled is True
     assert cfg.clash.regions["Tokyo"] == "(Tokyo|东京)"
+
+
+def test_detect_regions_counts_and_orders():
+    names = ["US-LA 美国", "JP-1 日本", "JP-2 日本", "SG 新加坡", "random-node"]
+    d = detect_regions(names)
+    assert d["JP"] == 2
+    assert d["US"] == 1
+    assert d["SG"] == 1
+    assert list(d)[0] == "JP"  # sorted by count, desc
+    assert "Tokyo" not in d  # no Tokyo-named node
+
+
+def test_render_config_toml_custom_regions(tmp_path):
+    det = DetectedClash(
+        api="http://127.0.0.1:9097", secret="x", proxy_port=7890, profiles_yaml="/p.yaml"
+    )
+    regions = {"US": r"(US|美国)", "JP": r"(JP|日本)"}
+    out = tmp_path / "config.toml"
+    out.write_text(render_config_toml(det, ["US", "JP"], regions))
+
+    cfg = load_config(str(out))
+    assert list(cfg.clash.regions) == ["US", "JP"]
+    assert cfg.clash.group_priority == ["US", "JP"]
