@@ -223,7 +223,10 @@ def cmd_update(argv):
 
     print("⬇️  Pulling latest changes…")
     if subprocess.run(["git", "-C", PROJECT_DIR, "pull", "--ff-only"]).returncode != 0:
-        print("✗ git pull failed — resolve it manually and retry.")
+        print("✗ Couldn't fast-forward — local changes to tracked files or diverged history.")
+        print("  Your config.toml is untracked and will be preserved. Reset and retry with:")
+        print(f"  git -C {PROJECT_DIR} fetch origin")
+        print(f"  git -C {PROJECT_DIR} reset --hard origin/main")
         return 1
 
     if not args.no_restart and os.path.exists(LAUNCHD_PLIST):

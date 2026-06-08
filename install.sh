@@ -35,10 +35,16 @@ command -v uv >/dev/null 2>&1 || {
   exit 1
 }
 
-# 2. clone or update
+# 2. clone or update (in place; never deletes - config.toml is gitignored/preserved)
 if [ -d "$INSTALL_DIR/.git" ]; then
-  info "Updating existing install at $INSTALL_DIR..."
-  git -C "$INSTALL_DIR" pull --ff-only
+  info "Found existing install at $INSTALL_DIR, updating..."
+  if ! git -C "$INSTALL_DIR" pull --ff-only; then
+    err "Couldn't fast-forward $INSTALL_DIR (local changes to tracked files, or"
+    err "diverged history). Your config.toml is untracked and will be preserved."
+    err "Reset it to the latest and re-run this installer:"
+    err "  git -C \"$INSTALL_DIR\" fetch origin && git -C \"$INSTALL_DIR\" reset --hard origin/main"
+    exit 1
+  fi
 else
   info "Cloning into $INSTALL_DIR..."
   git clone "$REPO" "$INSTALL_DIR"
