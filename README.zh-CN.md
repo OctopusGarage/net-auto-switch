@@ -39,10 +39,26 @@ cli.py  (argparse 入口: --once / --dry-run / --config + 日志)
 ```bash
 git clone https://github.com/OctopusGarage/net-auto-switch.git
 cd net-auto-switch
-cp config.example.toml config.toml   # 修改 secret / 端口 / 阈值
-uv sync                               # 创建 .venv(Python 由 .python-version 固定)并装依赖
+uv sync                  # 创建 .venv(Python 由 .python-version 固定)并装依赖
+uv run net-auto-switch init   # 引导式安装 — 见下
+```
 
-# 手动演练(不实际切换)
+### 引导式安装(`init`)
+
+`init` 会读取 Clash Verge 的配置,**自动探测** API 地址、secret、代理端口、
+`profiles.yaml` 路径,验证连接,预览你的节点分组,写入 `config.toml`(已有则先备份),
+并询问是否注册 launchd 服务:
+
+```bash
+uv run net-auto-switch init          # 交互式
+uv run net-auto-switch init --yes    # 全自动(采用所有默认值)
+```
+
+想手动配置(或不使用 Clash Verge)?改用模板:
+`cp config.example.toml config.toml`,然后编辑它。
+
+```bash
+# 不切换任何东西,先演练验证
 uv run net-auto-switch --once --dry-run
 ```
 
@@ -129,8 +145,8 @@ tail -f logs/launchd.err.log
 
 ```
 net-auto-switch/
-├── net_auto_switch/     # 包: config / wifi / clash / orchestrator / cli
-├── tests/               # pytest 单测(46 cases)
+├── net_auto_switch/     # 包: config / setup / wifi / clash / orchestrator / cli
+├── tests/               # pytest 单测(55 cases)
 ├── scripts/             # 运维脚本 + launchd plist + wrapper
 ├── docs/
 │   └── adr/             # 架构决策记录

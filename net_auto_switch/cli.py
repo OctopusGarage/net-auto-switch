@@ -2,15 +2,21 @@ import argparse
 import logging
 import logging.handlers
 import os
+import shutil
+import subprocess
 import sys
 
-from .config import ConfigError, load_config
+from .clash import ClashController
+from .config import ClashConfig, ConfigError, load_config
 from .orchestrator import Orchestrator
+from .setup import CLASH_VERGE_DIR, detect_clash_verge, probe_api, render_config_toml
 
 log = logging.getLogger("net_auto_switch.cli")
 
 LOG_PATH = os.path.expanduser("~/Library/Logs/net_auto_switch.log")
 LOG_BACKUP_DAYS = 14
+
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _setup_logging():
@@ -29,7 +35,87 @@ def _setup_logging():
     )
 
 
+def _confirm(prompt, default=True):
+    suffix = "[Y/n]" if default else "[y/N]"
+    ans = input(f"{prompt} {suffix} ").strip().lower()
+    if not ans:
+        return default
+    return ans in ("y", "yes")
+
+
+def cmd_init(argv):
+    """Guided setup: auto-detect Clash Verge, write config.toml, optionally
+    install the launchd service and start it."""
+    p = argparse.ArgumentParser(prog="net-auto-switch init", description="Guided setup wizard")
+    p.add_argument("-y", "--yes", action="store_true", help="Accept defaults, no prompts")
+    p.add_argument("--config", default="config.toml", help="Output config path")
+    p.add_argument("--no-service", action="store_true", help="Skip the launchd service step")
+    args = p.parse_args(argv)
+
+    print("🔍 Detecting Clash Verge…")
+    detected = detect_clash_verge()
+    if detected is None:
+        print(f"✗ Clash Verge config not found at:\n    {CLASH_VERGE_DIR}")
+        print("  Make sure Clash Verge is installed, or copy config.example.toml manually.")
+        return 1
+    secret_state = "(set)" if detected.secret else "(empty)"
+    print(f"✓ api={detected.api}  proxy_port={detected.proxy_port}  secret={secret_state}")
+    print(f"✓ profiles.yaml: {detected.profiles_yaml}")
+
+    try:
+        version = probe_api(detected.api, detected.secret)
+        print(f"✓ Connected to Clash API (version {version})")
+    except Exception as e:
+        print(f"⚠ Could not reach Clash API: {e}")
+        print("  Is Clash Verge running with external control enabled?")
+        if not args.yes and not _confirm("Continue anyway?", default=False):
+            return 1
+
+    group_priority = list(ClashConfig.__dataclass_fields__["group_priority"].default_factory())
+    try:
+        ctrl = ClashController(
+            ClashConfig(api=detected.api, secret=detected.secret, proxy_port=detected.proxy_port)
+        )
+        groups = ctrl.get_all_nodes_by_group(ctrl.get_proxies())
+        summary = ", ".join(f"{g} x{len(groups.get(g, []))}" for g in group_priority)
+        print(f"  Detected node groups: {summary}")
+    except Exception:
+        pass  # preview is best-effort; the wizard works without it
+
+    if not args.yes:
+        ans = input(f"Region priority {group_priority} (Enter to accept): ").strip()
+        if ans:
+            group_priority = [s.strip() for s in ans.split(",") if s.strip()]
+
+    out = args.config
+    if os.path.exists(out):
+        backup = out + ".bak"
+        shutil.copy2(out, backup)
+        print(f"• Backed up existing {out} -> {backup}")
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(render_config_toml(detected, group_priority))
+    print(f"✓ Wrote {out}")
+
+    try:
+        load_config(out)
+        print("✓ Config valid")
+    except ConfigError as e:
+        print(f"✗ Config invalid: {e}")
+        return 1
+
+    if not args.no_service and (args.yes or _confirm("Install launchd service and start now?")):
+        script = os.path.join(PROJECT_DIR, "scripts", "install-launchd.sh")
+        subprocess.run(["bash", script], check=False)
+
+    print("🎉 Done. Try a dry run: uv run net-auto-switch --once --dry-run")
+    return 0
+
+
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "init":
+        sys.exit(cmd_init(argv[1:]))
+
     parser = argparse.ArgumentParser(description="net-auto-switch")
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="Log actions without switching")

@@ -39,10 +39,27 @@ This project uses [uv](https://docs.astral.sh/uv/) to manage the virtualenv and 
 ```bash
 git clone https://github.com/OctopusGarage/net-auto-switch.git
 cd net-auto-switch
-cp config.example.toml config.toml   # edit secret / port / thresholds
-uv sync                               # create .venv (Python pinned by .python-version) and install deps
+uv sync                  # create .venv (Python pinned by .python-version) and install deps
+uv run net-auto-switch init   # guided setup — see below
+```
 
-# Manual rehearsal (no real switching)
+### Guided setup (`init`)
+
+`init` reads your Clash Verge config to **auto-detect** the API endpoint, secret,
+proxy port, and `profiles.yaml` path, verifies the connection, previews your node
+groups, writes `config.toml` (backing up any existing one), and offers to install
+the launchd service:
+
+```bash
+uv run net-auto-switch init          # interactive
+uv run net-auto-switch init --yes    # non-interactive (accept all defaults)
+```
+
+Prefer to configure by hand (or not using Clash Verge)? Copy the template
+instead: `cp config.example.toml config.toml` and edit it.
+
+```bash
+# Verify without switching anything
 uv run net-auto-switch --once --dry-run
 ```
 
@@ -129,8 +146,8 @@ Retention is controlled by `LOG_BACKUP_DAYS` in `cli.py` (default 14).
 
 ```
 net-auto-switch/
-├── net_auto_switch/     # package: config / wifi / clash / orchestrator / cli
-├── tests/               # pytest unit tests (46 cases)
+├── net_auto_switch/     # package: config / setup / wifi / clash / orchestrator / cli
+├── tests/               # pytest unit tests (55 cases)
 ├── scripts/             # ops scripts + launchd plist + wrapper
 ├── docs/
 │   └── adr/             # architecture decision records

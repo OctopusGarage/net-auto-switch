@@ -73,6 +73,41 @@ def test_main_logs_startup_context():
     assert any("dry_run=True" in m for m in messages)
 
 
+def test_main_init_dispatches_to_cmd_init():
+    with mock.patch.object(cli, "cmd_init", return_value=0) as ci:
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["init", "--yes"])
+    assert exc.value.code == 0
+    ci.assert_called_once_with(["--yes"])
+
+
+def test_cmd_init_writes_valid_config(tmp_path, monkeypatch):
+    from net_auto_switch.setup import DetectedClash
+
+    det = DetectedClash(
+        api="http://127.0.0.1:9097",
+        secret="abc",
+        proxy_port=7890,
+        profiles_yaml=str(tmp_path / "profiles.yaml"),
+    )
+    monkeypatch.setattr(cli, "detect_clash_verge", lambda: det)
+    monkeypatch.setattr(cli, "probe_api", lambda api, secret: "1.0")
+    monkeypatch.setattr(cli, "ClashController", mock.Mock())  # node preview is best-effort
+
+    out = tmp_path / "config.toml"
+    rc = cli.cmd_init(["--yes", "--no-service", "--config", str(out)])
+
+    assert rc == 0
+    cfg = cli.load_config(str(out))
+    assert cfg.clash.secret == "abc"
+    assert cfg.clash.proxy_port == 7890
+
+
+def test_cmd_init_missing_verge_returns_nonzero(monkeypatch):
+    monkeypatch.setattr(cli, "detect_clash_verge", lambda: None)
+    assert cli.cmd_init(["--yes", "--no-service"]) == 1
+
+
 def test_setup_logging_uses_daily_rotation(tmp_path, monkeypatch):
     import logging
     import logging.handlers
