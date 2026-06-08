@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop a manually-started net-auto-switch (NOT the launchd agent — use
+# Stop a manually-started net-auto-switch (NOT the launchd agent - use
 # uninstall-launchd.sh for that).
 set -euo pipefail
 

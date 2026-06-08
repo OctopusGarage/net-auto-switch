@@ -12,7 +12,7 @@ echo "[install-launchd] Syncing dependencies via uv (creates .venv)..."
 ( cd "$PROJECT_DIR" && uv sync )
 
 if [ ! -f "$PROJECT_DIR/config.toml" ]; then
-  echo "[install-launchd] Creating config.toml from example — edit it before relying on it."
+  echo "[install-launchd] Creating config.toml from example - edit it before relying on it."
   cp "$PROJECT_DIR/config.example.toml" "$PROJECT_DIR/config.toml"
 fi
 
