@@ -1,0 +1,12 @@
+# Keep release archives lean. GitHub's "Source code" tarball/zip is produced by
+# `git archive`, which honors `export-ignore` — so these developer-only files are
+# excluded from downloads while staying in the repo. Anything the runtime/build
+# needs (net_auto_switch/, pyproject.toml, uv.lock, .python-version, README.md,
+# config.example.toml, scripts/, install.sh, LICENSE) is intentionally NOT listed.
+/tests/          export-ignore
+/.github/        export-ignore
+/docs/           export-ignore
+/CLAUDE.md       export-ignore
+/CONTRIBUTING.md export-ignore
+/.gitignore      export-ignore
+/.gitattributes  export-ignore
