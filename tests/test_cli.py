@@ -117,6 +117,31 @@ def test_cmd_init_non_macos_aborts(monkeypatch):
     assert cli.cmd_init(["--yes", "--no-service"]) == 1
 
 
+def test_cmd_init_region_prompt_reprompts_on_bad_input(tmp_path, monkeypatch):
+    from net_auto_switch.setup import DetectedClash
+
+    det = DetectedClash(
+        api="http://127.0.0.1:9097", secret="abc", proxy_port=7890, profiles_yaml="p.yaml"
+    )
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    monkeypatch.setattr(cli, "detect_clash_verge", lambda: det)
+    monkeypatch.setattr(cli, "probe_api", lambda a, s: "1.0")
+    monkeypatch.setattr(cli, "health_check", lambda a, s: (5, 5))
+    monkeypatch.setattr(cli, "read_subscriptions", lambda p: [])
+    ctrl = mock.Mock()
+    ctrl.get_proxies.return_value = {"JP-1": {"type": "Vmess"}}
+    monkeypatch.setattr(cli, "ClashController", lambda cfg: ctrl)
+    monkeypatch.setattr(cli, "detect_regions", lambda names: {"JP": 2, "SG": 1})
+    answers = iter(["nope", "JP"])  # invalid first → must re-prompt, then valid
+    monkeypatch.setattr("builtins.input", lambda *a: next(answers))
+
+    out = tmp_path / "config.toml"
+    assert cli.cmd_init(["--no-service", "--config", str(out)]) == 0
+    cfg = cli.load_config(str(out))
+    assert cfg.clash.group_priority == ["JP"]
+    assert list(cfg.clash.regions) == ["JP"]
+
+
 def test_cmd_init_aborts_when_no_reachable_nodes(tmp_path, monkeypatch):
     from net_auto_switch.setup import DetectedClash
 

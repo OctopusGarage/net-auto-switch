@@ -7,6 +7,7 @@ from net_auto_switch.setup import (
     parse_subscriptions,
     parse_verge_runtime,
     render_config_toml,
+    resolve_priority,
 )
 
 
@@ -109,6 +110,15 @@ def test_parse_subscriptions():
 
 def test_parse_subscriptions_empty():
     assert parse_subscriptions("foo: bar\n") == []
+
+
+def test_resolve_priority():
+    valid = ["JP", "SG", "US"]
+    assert resolve_priority("JP,SG", valid) == (["JP", "SG"], [])
+    assert resolve_priority("jp, us", valid) == (["JP", "US"], [])  # case-insensitive
+    assert resolve_priority("JP,XX", valid) == (["JP"], ["XX"])  # invalid token reported
+    assert resolve_priority("JP,jp", valid) == (["JP"], [])  # de-duplicated
+    assert resolve_priority(" JP , , SG ", valid) == (["JP", "SG"], [])  # blanks ignored
 
 
 def test_clash_verge_diagnosis_states(tmp_path):

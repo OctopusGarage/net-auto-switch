@@ -19,6 +19,7 @@ from .setup import (
     probe_api,
     read_subscriptions,
     render_config_toml,
+    resolve_priority,
 )
 
 log = logging.getLogger("net_auto_switch.cli")
@@ -158,22 +159,30 @@ def cmd_init(argv):
             print("  Regions found in your subscription:")
             for name, c in counts.items():
                 print(f"    {name:8} x{c}")
-            chosen = list(counts)  # default: all detected, most-common first
+            valid = list(counts)  # detected region names, most-common first
+            chosen = valid
             if not args.yes:
-                ans = input(
-                    f"  Priority order {chosen} (Enter to accept, or comma-separated subset): "
-                ).strip()
-                if ans:
-                    chosen = [s.strip() for s in ans.split(",") if s.strip()]
+                print(f"  Choose priority order from: {', '.join(valid)}")
+                while True:
+                    ans = input(
+                        "  Enter names comma-separated (e.g. JP,SG), or just Enter for all: "
+                    ).strip()
+                    if not ans:
+                        chosen = valid
+                        break
+                    resolved, invalid = resolve_priority(ans, valid)
+                    if invalid:
+                        print(f"  ✗ not in the list: {', '.join(invalid)} — pick from {valid}")
+                        continue
+                    if not resolved:
+                        print("  ✗ nothing recognized — try again, or press Enter for all")
+                        continue
+                    chosen = resolved
+                    break
             # Build regions in catalog order (specific-first) for correct matching;
             # group_priority keeps the user's chosen order for fallback.
-            sel_regions = {n: REGION_CATALOG[n] for n in REGION_CATALOG if n in chosen}
-            sel_priority = [n for n in chosen if n in REGION_CATALOG]
-            unknown = [n for n in chosen if n not in REGION_CATALOG]
-            if unknown:
-                print(f"  ⚠ ignored (not in region catalog): {unknown}")
-            if sel_regions:
-                regions, group_priority = sel_regions, sel_priority
+            regions = {n: REGION_CATALOG[n] for n in REGION_CATALOG if n in chosen}
+            group_priority = chosen
     except Exception:
         pass  # detection is best-effort; falls back to the default regions
 

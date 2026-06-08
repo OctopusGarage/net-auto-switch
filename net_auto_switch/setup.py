@@ -203,6 +203,25 @@ def detect_regions(node_names, catalog=None):
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
+def resolve_priority(text, valid_names):
+    """Parse a comma-separated priority string against valid region names.
+    Case-insensitive, order-preserving, de-duplicated. Returns
+    (resolved_canonical_names, invalid_tokens). Pure."""
+    lookup = {v.lower(): v for v in valid_names}
+    resolved, invalid, seen = [], [], set()
+    for tok in text.split(","):
+        t = tok.strip()
+        if not t:
+            continue
+        canon = lookup.get(t.lower())
+        if canon is None:
+            invalid.append(t)
+        elif canon not in seen:
+            seen.add(canon)
+            resolved.append(canon)
+    return resolved, invalid
+
+
 def render_config_toml(detected, group_priority, regions=None):
     """Render a full, commented config.toml from detected values. Pure.
 
