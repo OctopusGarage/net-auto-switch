@@ -66,6 +66,7 @@ uv run net-auto-switch --once --dry-run
 ## Usage
 
 ```bash
+uv run net-auto-switch init                 # guided setup (see Quick Start)
 uv run net-auto-switch --once --dry-run    # single round, rehearsal
 uv run net-auto-switch --once              # single round
 uv run net-auto-switch                      # long-running

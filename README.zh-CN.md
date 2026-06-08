@@ -65,6 +65,7 @@ uv run net-auto-switch --once --dry-run
 ## Usage
 
 ```bash
+uv run net-auto-switch init                 # 引导式安装(见 Quick Start)
 uv run net-auto-switch --once --dry-run    # 单轮、演练
 uv run net-auto-switch --once              # 单轮
 uv run net-auto-switch                      # 长驻
