@@ -1,6 +1,6 @@
 [project]
 name = "net-auto-switch"
-version = "0.3.0"
+version = "0.3.1"
 description = "Layered WiFi + Clash Verge auto-switch daemon for macOS"
 readme = "README.md"
 requires-python = ">=3.11"
