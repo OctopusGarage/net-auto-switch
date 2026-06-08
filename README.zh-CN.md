@@ -12,7 +12,7 @@ macOS 上的**分层网络自动优化守护进程**:底层按需切换 WiFi,上
 
 - **分层编排** — 每轮先检查 WiFi(物理层),再检查 Clash(代理层),"先保证能上网,再保证代理质量"
 - **WiFi 层可选 + 低频** — 通过开关启用;独立检查间隔 + 切换冷却双保险,避免频繁切换
-- **Clash 节点智能选择** — 按地区分组(SG → Tokyo → JP_Other),延迟测速 + 优先级降级
+- **Clash 节点智能选择** — 按可配置地区分组(默认 SG → Tokyo → JP_Other),延迟测速 + 优先级降级
 - **Profile 兜底** — 所有节点不可用时,通过 AppleScript 自动切换订阅
 - **配置全外置** — 阈值 / 间隔 / 端口 / secret / 地区正则均在 `config.toml`,secret 不入库
 - **`--dry-run`** — 演练模式,完全无副作用(不做任何真实切换)
@@ -201,7 +201,7 @@ tail -f logs/launchd.err.log
 ```
 net-auto-switch/
 ├── net_auto_switch/     # 包: config / setup / wifi / clash / orchestrator / cli
-├── tests/               # pytest 单测(55 cases)
+├── tests/               # pytest 单测
 ├── scripts/             # 运维脚本 + launchd plist + wrapper
 ├── docs/
 │   └── adr/             # 架构决策记录

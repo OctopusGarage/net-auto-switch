@@ -12,7 +12,7 @@ A **layered network self-healing daemon** for macOS: the lower layer switches Wi
 
 - **Layered orchestration** — each round checks WiFi (physical layer) first, then Clash (proxy layer): "first make sure you're online, then make sure the proxy is good."
 - **WiFi layer is optional + low-frequency** — toggle it on; an independent check interval plus a switch cooldown prevent flapping.
-- **Smart Clash node selection** — grouped by region (SG → Tokyo → JP_Other), latency-tested with priority fallback.
+- **Smart Clash node selection** — grouped by configurable regions (default SG → Tokyo → JP_Other), latency-tested with priority fallback.
 - **Profile fallback** — when every node is unreachable, switch the subscription via AppleScript.
 - **Fully externalized config** — thresholds / intervals / ports / secret / region regexes all live in `config.toml`; the secret is never committed.
 - **`--dry-run`** — rehearsal mode with zero side effects (no real switching).
@@ -207,7 +207,7 @@ Retention is controlled by `LOG_BACKUP_DAYS` in `cli.py` (default 14).
 ```
 net-auto-switch/
 ├── net_auto_switch/     # package: config / setup / wifi / clash / orchestrator / cli
-├── tests/               # pytest unit tests (55 cases)
+├── tests/               # pytest unit tests
 ├── scripts/             # ops scripts + launchd plist + wrapper
 ├── docs/
 │   └── adr/             # architecture decision records
