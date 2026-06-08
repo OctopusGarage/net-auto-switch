@@ -72,6 +72,7 @@ uv run net-auto-switch init   # 引导式安装 — 见下
 
 `init` 会读取 Clash Verge 的配置,**自动探测** API 地址、secret、代理端口、
 `profiles.yaml` 路径,验证连接,**做健康检查**(没有可用节点则中止并给出指引),
+**检查每个订阅的自动更新 / 到期 / 流量并引导你修复过期订阅**,
 **扫描你订阅里的实际节点、识别出有哪些地区(US / JP / HK …)并让你挑选优先级**,
 写入 `config.toml`(已有则先备份),并询问是否注册 launchd 服务:
 

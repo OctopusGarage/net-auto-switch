@@ -48,6 +48,39 @@ def parse_verge_runtime(text):
     return {"api": api, "secret": secret, "proxy_port": int(proxy_port)}
 
 
+def parse_subscriptions(text):
+    """Parse remote subscriptions from profiles.yaml content. Pure. Returns a
+    list of {name, update_interval (min), allow_auto_update, expire (unix ts),
+    used (bytes), total (bytes)}."""
+    data = yaml.safe_load(text) or {}
+    subs = []
+    for item in data.get("items") or []:
+        if item.get("type") != "remote":
+            continue
+        opt = item.get("option") or {}
+        extra = item.get("extra") or {}
+        subs.append(
+            {
+                "name": item.get("name") or item.get("uid") or "?",
+                "update_interval": int(opt.get("update_interval") or 0),
+                "allow_auto_update": bool(opt.get("allow_auto_update", True)),
+                "expire": int(extra.get("expire") or 0),
+                "used": int(extra.get("upload") or 0) + int(extra.get("download") or 0),
+                "total": int(extra.get("total") or 0),
+            }
+        )
+    return subs
+
+
+def read_subscriptions(profiles_yaml):
+    """Read remote subscriptions from a profiles.yaml path; [] if unreadable."""
+    try:
+        with open(os.path.expanduser(profiles_yaml), encoding="utf-8") as f:
+            return parse_subscriptions(f.read())
+    except Exception:
+        return []
+
+
 def detect_clash_verge(base_dir=CLASH_VERGE_DIR):
     """Read Clash Verge's runtime config. Returns None if it isn't there."""
     runtime = os.path.join(base_dir, RUNTIME_CONFIG)

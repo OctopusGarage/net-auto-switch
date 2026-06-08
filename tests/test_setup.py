@@ -3,6 +3,7 @@ from net_auto_switch.setup import (
     DetectedClash,
     detect_clash_verge,
     detect_regions,
+    parse_subscriptions,
     parse_verge_runtime,
     render_config_toml,
 )
@@ -75,6 +76,38 @@ def test_detect_regions_counts_and_orders():
     assert d["SG"] == 1
     assert list(d)[0] == "JP"  # sorted by count, desc
     assert "Tokyo" not in d  # no Tokyo-named node
+
+
+def test_parse_subscriptions():
+    text = """
+    items:
+      - type: merge
+        name: null
+      - uid: abc
+        type: remote
+        name: default
+        extra:
+          upload: 10
+          download: 90
+          total: 1000
+          expire: 1881446400
+        option:
+          update_interval: 30
+          allow_auto_update: true
+    """
+    subs = parse_subscriptions(text)
+    assert len(subs) == 1  # only the remote item
+    s = subs[0]
+    assert s["name"] == "default"
+    assert s["update_interval"] == 30
+    assert s["allow_auto_update"] is True
+    assert s["expire"] == 1881446400
+    assert s["used"] == 100
+    assert s["total"] == 1000
+
+
+def test_parse_subscriptions_empty():
+    assert parse_subscriptions("foo: bar\n") == []
 
 
 def test_render_config_toml_custom_regions(tmp_path):

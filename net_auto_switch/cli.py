@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 from .clash import ClashController
 from .config import ClashConfig, ConfigError, load_config
@@ -16,6 +17,7 @@ from .setup import (
     detect_regions,
     health_check,
     probe_api,
+    read_subscriptions,
     render_config_toml,
 )
 
@@ -99,6 +101,34 @@ def cmd_init(argv):
     except Exception as e:
         print(f"⚠ Health check skipped ({e})")
 
+    # Subscription preflight (read-only): surface auto-update / expiry / traffic so
+    # the user can fix a stale subscription in Clash Verge before relying on it.
+    subs = read_subscriptions(detected.profiles_yaml)
+    if subs:
+        now = time.time()
+        print("✓ Subscriptions:")
+        needs_autoupdate = False
+        for s in subs:
+            auto = s["update_interval"] > 0 and s["allow_auto_update"]
+            au = f"auto-update every {s['update_interval']}m" if auto else "auto-update OFF"
+            print(f"    {s['name']}: {au}")
+            needs_autoupdate = needs_autoupdate or not auto
+            if s["expire"]:
+                days = (s["expire"] - now) / 86400
+                if days < 0:
+                    print("      ⚠ EXPIRED — renew the subscription")
+                elif days < 7:
+                    print(f"      ⚠ expires in ~{int(days)} day(s)")
+            if s["total"]:
+                pct = s["used"] / s["total"] * 100
+                if pct >= 90:
+                    print(f"      ⚠ traffic ~{pct:.0f}% used")
+        if needs_autoupdate:
+            print(
+                "  → Enable auto-update in Clash Verge: Profiles → right-click the "
+                "subscription → Edit → set 'Update Interval' (minutes)."
+            )
+
     group_priority = list(ClashConfig.__dataclass_fields__["group_priority"].default_factory())
     regions = None
     try:
@@ -153,6 +183,10 @@ def cmd_init(argv):
     if not args.no_service and (args.yes or _confirm("Install launchd service and start now?")):
         subprocess.run(["bash", INSTALL_LAUNCHD], check=False)
 
+    print("\nOne-time checklist (in Clash Verge / macOS):")
+    print("  • Launch Clash Verge at login so its API + subscription auto-update stay available")
+    print("  • Profile fallback needs Accessibility: System Settings → Privacy & Security")
+    print("    → Accessibility (allow your terminal / the launchd agent)")
     print("🎉 Done. Try a dry run: uv run net-auto-switch --once --dry-run")
     return 0
 
