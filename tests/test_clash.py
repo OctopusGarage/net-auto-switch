@@ -85,13 +85,15 @@ def test_run_cycle_dry_run_does_not_enrich_or_switch():
     c = make_ctrl()
     proxies = {
         "GLOBAL": {"type": "Selector", "now": "jp1"},
-        "jp1": {"type": "Shadowsocks"},   # name "jp1" -> JP_Other (no Tokyo by name)
+        "jp1": {"type": "Shadowsocks"},  # name "jp1" -> JP_Other (no Tokyo by name)
     }
-    with mock.patch.object(c, "get_proxies", return_value=proxies), \
-         mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}), \
-         mock.patch.object(c, "enrich_tokyo_via_ip") as enrich, \
-         mock.patch.object(c, "switch_proxy") as switch, \
-         mock.patch.object(c, "get_node_region") as region:
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}),
+        mock.patch.object(c, "enrich_tokyo_via_ip") as enrich,
+        mock.patch.object(c, "switch_proxy") as switch,
+        mock.patch.object(c, "get_node_region") as region,
+    ):
         result = c.run_cycle(dry_run=True)
     enrich.assert_not_called()
     region.assert_not_called()
@@ -105,9 +107,11 @@ def test_run_cycle_non_dry_run_enriches_when_no_tokyo():
         "GLOBAL": {"type": "Selector", "now": "jp1"},
         "jp1": {"type": "Shadowsocks"},
     }
-    with mock.patch.object(c, "get_proxies", return_value=proxies), \
-         mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}), \
-         mock.patch.object(c, "enrich_tokyo_via_ip") as enrich, \
-         mock.patch.object(c, "switch_proxy"):
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}),
+        mock.patch.object(c, "enrich_tokyo_via_ip") as enrich,
+        mock.patch.object(c, "switch_proxy"),
+    ):
         c.run_cycle(dry_run=False)
     enrich.assert_called_once()

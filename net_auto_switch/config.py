@@ -36,12 +36,9 @@ class ClashConfig:
     max_switch_per_min: int = 3
     max_profile_switch_per_30min: int = 1
     profiles_yaml: str = (
-        "~/Library/Application Support/"
-        "io.github.clash-verge-rev.clash-verge-rev/profiles.yaml"
+        "~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles.yaml"
     )
-    group_priority: list = field(
-        default_factory=lambda: ["SG", "Tokyo", "JP_Other"]
-    )
+    group_priority: list = field(default_factory=lambda: ["SG", "Tokyo", "JP_Other"])
     patterns: ClashPatterns = field(default_factory=ClashPatterns)
 
 
@@ -77,8 +74,7 @@ def load_config(path=None):
     resolved = _resolve_path(path)
     if not resolved:
         raise ConfigError(
-            "No config file found. Copy config.example.toml to config.toml "
-            "and fill in your values."
+            "No config file found. Copy config.example.toml to config.toml and fill in your values."
         )
     with open(resolved, "rb") as f:
         data = tomllib.load(f)

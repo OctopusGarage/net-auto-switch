@@ -8,7 +8,8 @@ log = logging.getLogger("net_auto_switch.wifi")
 def get_current_wifi(interface="en0"):
     result = subprocess.run(
         ["networksetup", "-getairportnetwork", interface],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     output = result.stdout.strip()
     if "You are not associated" in output:
@@ -21,7 +22,9 @@ def ping_host(host="8.8.8.8", count=3):
     try:
         result = subprocess.run(
             ["ping", "-c", str(count), "-m", "2", host],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except subprocess.TimeoutExpired:
         log.warning("ping timed out")
@@ -37,7 +40,8 @@ def ping_host(host="8.8.8.8", count=3):
 def known_wifis(interface="en0"):
     result = subprocess.run(
         ["networksetup", "-listpreferredwirelessnetworks", interface],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     lines = result.stdout.strip().split("\n")
     names = []
@@ -51,7 +55,8 @@ def known_wifis(interface="en0"):
 def available_wifis():
     result = subprocess.run(
         ["system_profiler", "SPAirPortDataType"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     wifis = set()
     in_other_networks = False
@@ -112,7 +117,8 @@ def switch_to(wifi_name, interface="en0", dry_run=False):
     log.info(f"Switching to WiFi: {wifi_name}")
     result = subprocess.run(
         ["networksetup", "-setairportnetwork", interface, wifi_name],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0:
         log.info(f"Successfully switched to {wifi_name}")

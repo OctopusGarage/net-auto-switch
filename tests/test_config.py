@@ -12,10 +12,13 @@ def _write(tmp_path, content):
 
 
 def test_load_minimal_applies_defaults(tmp_path):
-    path = _write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
         [clash]
         secret = "abc"
-    """)
+    """,
+    )
     cfg = load_config(str(path))
     assert cfg.main_interval == 600
     assert cfg.wifi.enabled is True
@@ -27,7 +30,9 @@ def test_load_minimal_applies_defaults(tmp_path):
 
 
 def test_override_values(tmp_path):
-    path = _write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
         main_interval = 300
         [wifi]
         enabled = false
@@ -35,7 +40,8 @@ def test_override_values(tmp_path):
         [clash]
         secret = "xyz"
         delay_limit = 150
-    """)
+    """,
+    )
     cfg = load_config(str(path))
     assert cfg.main_interval == 300
     assert cfg.wifi.enabled is False
@@ -50,23 +56,29 @@ def test_missing_file_raises(tmp_path):
 
 
 def test_invalid_interval_raises(tmp_path):
-    path = _write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
         main_interval = -5
         [clash]
         secret = "abc"
-    """)
+    """,
+    )
     with pytest.raises(ConfigError):
         load_config(str(path))
 
 
 def test_patterns_override(tmp_path):
-    path = _write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
         [clash]
         secret = "abc"
         [clash.patterns]
         sg = "CUSTOM_SG"
         tokyo = "CUSTOM_TK"
-    """)
+    """,
+    )
     cfg = load_config(str(path))
     assert cfg.clash.patterns.sg == "CUSTOM_SG"
     assert cfg.clash.patterns.tokyo == "CUSTOM_TK"
@@ -75,11 +87,14 @@ def test_patterns_override(tmp_path):
 
 
 def test_switch_cooldown_zero_allowed(tmp_path):
-    path = _write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
         [wifi]
         switch_cooldown = 0
         [clash]
         secret = "abc"
-    """)
+    """,
+    )
     cfg = load_config(str(path))
     assert cfg.wifi.switch_cooldown == 0

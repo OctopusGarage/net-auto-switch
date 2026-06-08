@@ -20,8 +20,10 @@ def test_is_bad_network_good():
 
 
 def test_candidate_wifis_intersection():
-    with mock.patch.object(wifi, "known_wifis", return_value=["A", "B", "C"]), \
-         mock.patch.object(wifi, "available_wifis", return_value={"B", "C", "D"}):
+    with (
+        mock.patch.object(wifi, "known_wifis", return_value=["A", "B", "C"]),
+        mock.patch.object(wifi, "available_wifis", return_value={"B", "C", "D"}),
+    ):
         result = set(wifi.candidate_wifis("en0"))
     assert result == {"B", "C"}
 

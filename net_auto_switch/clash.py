@@ -93,9 +93,7 @@ class ClashController:
                 "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
                 "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
             }
-            r = requests.get(
-                "https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10
-            )
+            r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
             return r.json().get("region", "")
         except Exception as e:
             log.warning(f"Location check error: {e}")
@@ -129,9 +127,7 @@ class ClashController:
         current_delay = delays.get(current, DEAD)
         if current_delay <= self.cfg.delay_limit:
             return False, None
-        best_in_current = self.select_best_in_group(
-            groups.get(current_group, []), delays
-        )
+        best_in_current = self.select_best_in_group(groups.get(current_group, []), delays)
         if best_in_current:
             return True, best_in_current
         for group in self.cfg.group_priority:
@@ -146,6 +142,7 @@ class ClashController:
     def get_profiles(self):
         try:
             import yaml
+
             with open(os.path.expanduser(self.cfg.profiles_yaml)) as f:
                 data = yaml.safe_load(f)
             items = data.get("items", [])
@@ -157,9 +154,7 @@ class ClashController:
 
     def switch_profile_by_name(self, name):
         now = time.time()
-        self._profile_switch_times = [
-            t for t in self._profile_switch_times if now - t < 1800
-        ]
+        self._profile_switch_times = [t for t in self._profile_switch_times if now - t < 1800]
         if len(self._profile_switch_times) >= self.cfg.max_profile_switch_per_30min:
             log.info("Profile switch limit reached (per 30min)")
             return False
@@ -177,9 +172,7 @@ tell application "System Events"
 end tell
 '''
         try:
-            result = subprocess.run(
-                ["osascript", "-e", script], capture_output=True, timeout=15
-            )
+            result = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=15)
             if result.returncode != 0:
                 log.error(f"AppleScript error: {result.stderr.decode().strip()}")
                 return False
@@ -207,10 +200,9 @@ end tell
             self.enrich_tokyo_via_ip(groups)
 
         current = proxies["GLOBAL"]["now"]
-        current_group = (
-            next((g for g in self.cfg.group_priority if current in groups.get(g, [])), None)
-            or self.classify_node(current)
-        )
+        current_group = next(
+            (g for g in self.cfg.group_priority if current in groups.get(g, [])), None
+        ) or self.classify_node(current)
         group_label = GROUP_NAMES.get(current_group, current_group)
         log.info(f"Current node: {current} (group: {group_label})")
 
