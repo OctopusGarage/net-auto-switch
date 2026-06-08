@@ -138,6 +138,7 @@ def render_config_toml(detected, group_priority, regions=None):
     Tokyo IP-enrich table is emitted only for that default JP layout. json.dumps
     yields valid TOML strings/arrays, safely quoting special characters.
     """
+
     # ensure_ascii=False keeps emoji / CJK literal — TOML allows them, but TOML
     # basic strings reject the surrogate-pair \u escapes json.dumps emits by default.
     def toml_str(v):
