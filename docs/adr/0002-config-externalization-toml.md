@@ -5,7 +5,7 @@
 
 ## Context
 
-The original scripts hardcoded the Clash API secret (`your-clash-api-secret`), ports, latency
+The original scripts hardcoded the Clash API secret, ports, latency
 thresholds, region regexes, and intervals. This leaked a secret into source and
 made every tweak a code edit.
 
