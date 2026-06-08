@@ -34,7 +34,16 @@ cli.py  (argparse 入口: --once / --dry-run / --config + 日志)
 
 ## Quick Start
 
-本项目用 [uv](https://docs.astral.sh/uv/) 管理虚拟环境与依赖。
+### 一行安装(推荐)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OctopusGarage/net-auto-switch/main/install.sh | bash
+```
+
+自动:没 [uv](https://docs.astral.sh/uv/) 就装 uv → clone 到 `~/.net-auto-switch` →
+装依赖 → 安装全局 `net-auto-switch` 命令 → 跑 `init` 引导。再次执行即更新已有安装。
+
+### 手动安装
 
 ```bash
 git clone https://github.com/OctopusGarage/net-auto-switch.git
@@ -42,6 +51,9 @@ cd net-auto-switch
 uv sync                  # 创建 .venv(Python 由 .python-version 固定)并装依赖
 uv run net-auto-switch init   # 引导式安装 — 见下
 ```
+
+想直接下载?每个 [release](https://github.com/OctopusGarage/net-auto-switch/releases)
+都自带自动生成的源码 tarball / zip。
 
 ### 引导式安装(`init`)
 
@@ -62,10 +74,19 @@ uv run net-auto-switch init --yes    # 全自动(采用所有默认值)
 uv run net-auto-switch --once --dry-run
 ```
 
+### 更新
+
+```bash
+net-auto-switch update    # 拉取最新 + 重新装依赖 + 重载 launchd 服务
+```
+
+(手动 clone 的话:`git pull && uv sync`,再重跑 `./scripts/install-launchd.sh`。)
+
 ## Usage
 
 ```bash
 uv run net-auto-switch init                 # 引导式安装(见 Quick Start)
+uv run net-auto-switch update               # 更新到最新版本
 uv run net-auto-switch --once --dry-run    # 单轮、演练
 uv run net-auto-switch --once              # 单轮
 uv run net-auto-switch                      # 长驻
@@ -151,6 +172,7 @@ net-auto-switch/
 ├── scripts/             # 运维脚本 + launchd plist + wrapper
 ├── docs/
 │   └── adr/             # 架构决策记录
+├── install.sh           # 一行 curl 安装脚本(引导)
 ├── config.example.toml  # 配置模板(config.toml 被 gitignore)
 ├── CONTEXT.md           # 领域术语与不变量
 ├── pyproject.toml       # 依赖 + 工具配置(pytest / ruff)

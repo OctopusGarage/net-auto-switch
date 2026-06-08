@@ -34,7 +34,17 @@ See [`CONTEXT.md`](CONTEXT.md) (domain glossary & invariants) and [`docs/adr/`](
 
 ## Quick Start
 
-This project uses [uv](https://docs.astral.sh/uv/) to manage the virtualenv and dependencies.
+### One-line install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OctopusGarage/net-auto-switch/main/install.sh | bash
+```
+
+Installs [uv](https://docs.astral.sh/uv/) if needed, clones into `~/.net-auto-switch`,
+syncs deps, adds a global `net-auto-switch` command, and runs the guided `init`
+wizard. Re-run it any time — it updates an existing install.
+
+### Manual install
 
 ```bash
 git clone https://github.com/OctopusGarage/net-auto-switch.git
@@ -42,6 +52,9 @@ cd net-auto-switch
 uv sync                  # create .venv (Python pinned by .python-version) and install deps
 uv run net-auto-switch init   # guided setup — see below
 ```
+
+Prefer a download? Every [release](https://github.com/OctopusGarage/net-auto-switch/releases)
+ships an auto-generated source tarball / zip.
 
 ### Guided setup (`init`)
 
@@ -63,10 +76,19 @@ instead: `cp config.example.toml config.toml` and edit it.
 uv run net-auto-switch --once --dry-run
 ```
 
+### Updating
+
+```bash
+net-auto-switch update    # pull latest, re-sync deps, reload the launchd service
+```
+
+(For a manual clone: `git pull && uv sync`, then re-run `./scripts/install-launchd.sh`.)
+
 ## Usage
 
 ```bash
 uv run net-auto-switch init                 # guided setup (see Quick Start)
+uv run net-auto-switch update               # update to the latest version
 uv run net-auto-switch --once --dry-run    # single round, rehearsal
 uv run net-auto-switch --once              # single round
 uv run net-auto-switch                      # long-running
@@ -152,6 +174,7 @@ net-auto-switch/
 ├── scripts/             # ops scripts + launchd plist + wrapper
 ├── docs/
 │   └── adr/             # architecture decision records
+├── install.sh           # one-line curl installer (bootstrap)
 ├── config.example.toml  # config template (config.toml is gitignored)
 ├── CONTEXT.md           # domain glossary & invariants
 ├── pyproject.toml       # dependencies + tool config (pytest / ruff)

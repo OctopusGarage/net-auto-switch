@@ -108,6 +108,39 @@ def test_cmd_init_missing_verge_returns_nonzero(monkeypatch):
     assert cli.cmd_init(["--yes", "--no-service"]) == 1
 
 
+def test_main_update_dispatches_to_cmd_update():
+    with mock.patch.object(cli, "cmd_update", return_value=0) as cu:
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["update"])
+    assert exc.value.code == 0
+    cu.assert_called_once_with([])
+
+
+def test_cmd_update_pull_failure_returns_nonzero(monkeypatch):
+    def fake_run(cmd, **kw):
+        if cmd[:2] == ["git", "-C"]:
+            return mock.Mock(returncode=1)
+        return mock.Mock(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    assert cli.cmd_update([]) == 1
+
+
+def test_cmd_update_syncs_when_service_absent(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return mock.Mock(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(cli.os.path, "exists", lambda p: False)  # no launchd plist
+
+    assert cli.cmd_update([]) == 0
+    assert ["git", "-C", cli.PROJECT_DIR, "pull", "--ff-only"] in calls
+    assert any(c[0] == "uv" and "sync" in c for c in calls)
+
+
 def test_setup_logging_uses_daily_rotation(tmp_path, monkeypatch):
     import logging
     import logging.handlers

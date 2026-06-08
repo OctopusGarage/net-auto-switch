@@ -17,6 +17,9 @@ LOG_PATH = os.path.expanduser("~/Library/Logs/net_auto_switch.log")
 LOG_BACKUP_DAYS = 14
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAUNCHD_LABEL = "com.octopusgarage.net-auto-switch"
+LAUNCHD_PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCHD_LABEL}.plist")
+INSTALL_LAUNCHD = os.path.join(PROJECT_DIR, "scripts", "install-launchd.sh")
 
 
 def _setup_logging():
@@ -104,10 +107,34 @@ def cmd_init(argv):
         return 1
 
     if not args.no_service and (args.yes or _confirm("Install launchd service and start now?")):
-        script = os.path.join(PROJECT_DIR, "scripts", "install-launchd.sh")
-        subprocess.run(["bash", script], check=False)
+        subprocess.run(["bash", INSTALL_LAUNCHD], check=False)
 
     print("🎉 Done. Try a dry run: uv run net-auto-switch --once --dry-run")
+    return 0
+
+
+def cmd_update(argv):
+    """Update an existing install: pull latest, re-sync deps, reload the service."""
+    p = argparse.ArgumentParser(prog="net-auto-switch update", description="Update to latest")
+    p.add_argument("--no-restart", action="store_true", help="Don't reload the launchd service")
+    args = p.parse_args(argv)
+
+    print("⬇️  Pulling latest changes…")
+    if subprocess.run(["git", "-C", PROJECT_DIR, "pull", "--ff-only"]).returncode != 0:
+        print("✗ git pull failed — resolve it manually and retry.")
+        return 1
+
+    if not args.no_restart and os.path.exists(LAUNCHD_PLIST):
+        # install-launchd.sh re-syncs deps, regenerates the plist, and reloads it.
+        print("🔄 Re-syncing and reloading service…")
+        subprocess.run(["bash", INSTALL_LAUNCHD], check=False)
+    else:
+        print("📦 Syncing dependencies…")
+        subprocess.run(["uv", "sync"], cwd=PROJECT_DIR, check=False)
+        if not os.path.exists(LAUNCHD_PLIST):
+            print("ℹ Service not installed; restart manually if running.")
+
+    print("🎉 Up to date.")
     return 0
 
 
@@ -115,6 +142,8 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "init":
         sys.exit(cmd_init(argv[1:]))
+    if argv and argv[0] == "update":
+        sys.exit(cmd_update(argv[1:]))
 
     parser = argparse.ArgumentParser(description="net-auto-switch")
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")
