@@ -1,150 +1,164 @@
 # net-auto-switch
 
-macOS 上的**分层网络自动优化守护进程**:底层按需切换 WiFi,上层自动切换 Clash Verge 节点 / 订阅,在网络变差时无需人工干预即可恢复连通与代理质量。整合并重构自 `dev_env_utils` 下的 `wifi_auto_switch.py` 与 `clash_verge_auto_switch_region.py`。
+[![CI](https://github.com/OctopusGarage/net-auto-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/OctopusGarage/net-auto-switch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](.python-version)
+
+**English** · [简体中文](README.zh-CN.md)
+
+A **layered network self-healing daemon** for macOS: the lower layer switches WiFi on demand, the upper layer auto-switches Clash Verge nodes / subscriptions. When the network degrades, it restores connectivity and proxy quality without manual intervention.
 
 ## Features
 
-- **分层编排** — 每轮先检查 WiFi(物理层),再检查 Clash(代理层),"先保证能上网,再保证代理质量"
-- **WiFi 层可选 + 低频** — 通过开关启用;独立检查间隔 + 切换冷却双保险,避免频繁切换
-- **Clash 节点智能选择** — 按地区分组(SG → Tokyo → JP_Other),延迟测速 + 优先级降级
-- **Profile 兜底** — 所有节点不可用时,通过 AppleScript 自动切换订阅
-- **配置全外置** — 阈值 / 间隔 / 端口 / secret / 地区正则均在 `config.toml`,secret 不入库
-- **`--dry-run`** — 演练模式,完全无副作用(不做任何真实切换)
-- **故障隔离** — 任一层瞬时错误不会拖垮守护进程
-- **开机自启** — launchd 服务,`RunAtLoad` + `KeepAlive` 崩溃自动重启
+- **Layered orchestration** — each round checks WiFi (physical layer) first, then Clash (proxy layer): "first make sure you're online, then make sure the proxy is good."
+- **WiFi layer is optional + low-frequency** — toggle it on; an independent check interval plus a switch cooldown prevent flapping.
+- **Smart Clash node selection** — grouped by region (SG → Tokyo → JP_Other), latency-tested with priority fallback.
+- **Profile fallback** — when every node is unreachable, switch the subscription via AppleScript.
+- **Fully externalized config** — thresholds / intervals / ports / secret / region regexes all live in `config.toml`; the secret is never committed.
+- **`--dry-run`** — rehearsal mode with zero side effects (no real switching).
+- **Fault isolation** — a transient error in any one layer never takes down the daemon.
+- **Launch at boot** — a launchd service with `RunAtLoad` + `KeepAlive` (auto-restart on crash).
 
 ## Architecture
 
 ```
-cli.py  (argparse 入口: --once / --dry-run / --config + 日志)
+cli.py  (argparse entry: --once / --dry-run / --config + logging)
    │
-   └── orchestrator.py  (主循环: WiFi 优先 → Clash; 频率/冷却; 故障隔离)
-         ├── wifi.py    (WiFi 层: 探测/扫描/切换 via networksetup/system_profiler/ping)
-         ├── clash.py   (ClashController: 分组/选择算法/节点切换/profile 兜底)
-         └── config.py  (TOML 加载 → dataclass + 校验)
+   └── orchestrator.py  (main loop: WiFi first → Clash; rate/cooldown; fault isolation)
+         ├── wifi.py    (WiFi layer: probe/scan/switch via networksetup/system_profiler/ping)
+         ├── clash.py   (ClashController: grouping/selection/node switch/profile fallback)
+         └── config.py  (TOML load → dataclass + validation)
 ```
 
-详见 [`CONTEXT.md`](CONTEXT.md)(领域术语与不变量)与 [`docs/adr/`](docs/adr/)(架构决策)。
+See [`CONTEXT.md`](CONTEXT.md) (domain glossary & invariants) and [`docs/adr/`](docs/adr/) (architecture decisions).
 
 ## Quick Start
 
-本项目用 [uv](https://docs.astral.sh/uv/) 管理虚拟环境与依赖。
+This project uses [uv](https://docs.astral.sh/uv/) to manage the virtualenv and dependencies.
 
 ```bash
+git clone https://github.com/OctopusGarage/net-auto-switch.git
 cd net-auto-switch
-cp config.example.toml config.toml   # 修改 secret / 端口 / 阈值
-uv sync                               # 创建 .venv(Python 由 .python-version 固定)并装依赖
+cp config.example.toml config.toml   # edit secret / port / thresholds
+uv sync                               # create .venv (Python pinned by .python-version) and install deps
 
-# 手动演练(不实际切换)
+# Manual rehearsal (no real switching)
 uv run net-auto-switch --once --dry-run
 ```
 
 ## Usage
 
 ```bash
-uv run net-auto-switch --once --dry-run    # 单轮、演练
-uv run net-auto-switch --once              # 单轮
-uv run net-auto-switch                      # 长驻
+uv run net-auto-switch --once --dry-run    # single round, rehearsal
+uv run net-auto-switch --once              # single round
+uv run net-auto-switch                      # long-running
 uv run net-auto-switch --config /path/to/config.toml
 ```
 
-`uv run net-auto-switch` 等价于 `uv run python -m net_auto_switch.cli`。
+`uv run net-auto-switch` is equivalent to `uv run python -m net_auto_switch.cli`.
 
-### 进程管理脚本
+### Process management scripts
 
 ```bash
-./scripts/start.sh    # 后台手动启动(写 .net-auto-switch.pid)
-./scripts/status.sh   # 查看是否运行
-./scripts/stop.sh     # 停止
+./scripts/start.sh    # start in background (writes .net-auto-switch.pid)
+./scripts/status.sh   # is it running?
+./scripts/stop.sh     # stop it
 ```
 
 ## Configuration
 
-所有设置在 `config.toml`(模板见 `config.example.toml`)。
+All settings live in `config.toml` (template: `config.example.toml`).
 
-| 键 | 默认 | 说明 |
-|----|------|------|
-| `main_interval` | `600` | 主循环间隔(秒) |
-| `wifi.enabled` | `true` | 是否启用 WiFi 层 |
-| `wifi.check_interval` | `3600` | WiFi 检查间隔(秒) |
-| `wifi.switch_cooldown` | `7200` | WiFi 切换后冷却(秒) |
-| `wifi.bad_latency_ms` | `200` | 判定"网差"的延迟阈值 |
-| `wifi.bad_loss_pct` | `5` | 判定"网差"的丢包阈值(%) |
-| `wifi.min_improvement_ms` | `100` | 改善达到此值才切换 |
-| `wifi.interface` | `en0` | WiFi 网卡 |
-| `clash.api` | `http://127.0.0.1:9097` | Clash 外部控制 API |
-| `clash.secret` | *(必填)* | Clash API secret |
-| `clash.proxy_port` | `7890` | Clash HTTP 代理端口(IP 定位用) |
-| `clash.delay_limit` | `300` | 当前节点稳定阈值(ms) |
-| `clash.max_switch_per_min` | `3` | 每分钟最多节点切换次数 |
-| `clash.max_profile_switch_per_30min` | `1` | 每 30 分钟最多 profile 切换次数 |
-| `clash.profiles_yaml` | *(Clash Verge 路径)* | profiles.yaml 位置 |
-| `clash.group_priority` | `["SG","Tokyo","JP_Other"]` | 地区降级优先级 |
-| `clash.patterns.*` | *(正则)* | SG / JP / Tokyo / 试用 的识别正则 |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `main_interval` | `600` | Main loop interval (seconds) |
+| `wifi.enabled` | `true` | Enable the WiFi layer |
+| `wifi.check_interval` | `3600` | WiFi check interval (seconds) |
+| `wifi.switch_cooldown` | `7200` | Cooldown after a WiFi switch (seconds) |
+| `wifi.bad_latency_ms` | `200` | Latency threshold for "bad network" |
+| `wifi.bad_loss_pct` | `5` | Packet-loss threshold for "bad network" (%) |
+| `wifi.min_improvement_ms` | `100` | Only switch if improvement reaches this |
+| `wifi.interface` | `en0` | WiFi interface |
+| `clash.api` | `http://127.0.0.1:9097` | Clash external-control API |
+| `clash.secret` | *(required)* | Clash API secret |
+| `clash.proxy_port` | `7890` | Clash HTTP proxy port (used for IP geolocation) |
+| `clash.delay_limit` | `300` | Stability threshold for the current node (ms) |
+| `clash.max_switch_per_min` | `3` | Max node switches per minute |
+| `clash.max_profile_switch_per_30min` | `1` | Max profile switches per 30 minutes |
+| `clash.profiles_yaml` | *(Clash Verge path)* | Location of `profiles.yaml` |
+| `clash.group_priority` | `["SG","Tokyo","JP_Other"]` | Region fallback priority |
+| `clash.patterns.*` | *(regex)* | Recognition regexes for SG / JP / Tokyo / trial |
 
 ## Production Deployment (macOS launchd)
 
-以 launchd 服务运行,开机自启 + 崩溃自动重启:
+Run as a launchd service: launch at boot + auto-restart on crash.
 
 ```bash
-./scripts/install-launchd.sh     # 装依赖 + 生成 plist + 注册并加载
-./scripts/uninstall-launchd.sh   # 卸载
+./scripts/install-launchd.sh     # install deps + generate plist + register & load
+./scripts/uninstall-launchd.sh   # unload
 
-# 手动查看
+# Inspect manually
 launchctl list com.octopusgarage.net-auto-switch
 tail -f logs/launchd.err.log
 ```
 
-**特性:**
-- `RunAtLoad` — 开机即启动
-- `KeepAlive` + `ThrottleInterval=10` — 崩溃自动重启,最小间隔 10s(防崩溃循环)
-- launchd 标准输出/错误 → `logs/launchd.out.log` / `logs/launchd.err.log`
+**What it gives you:**
+- `RunAtLoad` — starts at boot.
+- `KeepAlive` + `ThrottleInterval=10` — auto-restart on crash, with a 10s minimum interval (crash-loop guard).
+- launchd stdout/stderr → `logs/launchd.out.log` / `logs/launchd.err.log`.
 
 ## Resilience
 
-| 机制 | 行为 |
-|------|------|
-| 层级隔离 | WiFi / Clash 各自 try/except,单层失败不影响另一层、不杀进程 |
-| Clash API 错误 | 捕获 `RequestException`,记录后进入下一轮 |
-| 节点全挂 | 自动切换订阅 profile 兜底(受 30 分钟频率限制) |
-| 切换频率限制 | 节点 ≤ 3 次/分钟,profile ≤ 1 次/30 分钟 |
-| 进程自愈 | launchd `KeepAlive` 崩溃自动重启 |
+| Mechanism | Behavior |
+|-----------|----------|
+| Layer isolation | WiFi / Clash each wrapped in try/except; one layer failing affects neither the other nor the process |
+| Clash API error | `RequestException` caught, logged, then on to the next round |
+| All nodes down | Auto-switch the subscription profile as a fallback (rate-limited to 30 min) |
+| Switch rate limit | Nodes ≤ 3/min, profiles ≤ 1/30 min |
+| Process self-heal | launchd `KeepAlive` auto-restarts on crash |
 
 ## Logs
 
-- **程序日志(权威)**:`~/Library/Logs/net_auto_switch.log` —— **每天午夜轮转,保留 14 天**自动清理(`TimedRotatingFileHandler`),不会无限增长。
-- launchd 方式运行时:stdout 丢弃(`/dev/null`,避免与上面的轮转日志重复),`logs/launchd.err.log` 仅捕获日志系统初始化前的崩溃(正常运行时基本为空)。
-- 手动 `start.sh` 运行时:输出追加到 `logs/net-auto-switch.out.log`(开发用)。
+- **Program log (authoritative):** `~/Library/Logs/net_auto_switch.log` — **rotated at midnight daily, cleaned up after 14 days** (`TimedRotatingFileHandler`); never grows unbounded.
+- When run via launchd: stdout is discarded (`/dev/null`, to avoid duplicating the rotated log); `logs/launchd.err.log` only captures crashes that happen before the logging system initializes (normally empty).
+- When run via `start.sh`: output is appended to `logs/net-auto-switch.out.log` (for development).
 
-保留天数由 `cli.py` 的 `LOG_BACKUP_DAYS` 控制(默认 14)。
+Retention is controlled by `LOG_BACKUP_DAYS` in `cli.py` (default 14).
 
 ## Project Layout
 
 ```
 net-auto-switch/
-├── net_auto_switch/     # 包: config / wifi / clash / orchestrator / cli
-├── tests/               # pytest 单测(40 cases)
-├── scripts/             # 运维脚本 + launchd plist + wrapper
+├── net_auto_switch/     # package: config / wifi / clash / orchestrator / cli
+├── tests/               # pytest unit tests (46 cases)
+├── scripts/             # ops scripts + launchd plist + wrapper
 ├── docs/
-│   ├── adr/             # 架构决策记录
-│   └── superpowers/     # 设计 spec 与实现 plan
-├── config.example.toml  # 配置模板(config.toml 被 gitignore)
-├── CONTEXT.md           # 领域术语与不变量
-├── CLAUDE.md            # 项目原则(给 Claude Code)
-├── pyproject.toml       # 依赖 + 工具配置(pytest / ruff)
-├── uv.lock              # uv 锁定的依赖版本(提交入库)
-└── .python-version      # 固定 Python 版本(uv 读取)
+│   └── adr/             # architecture decision records
+├── config.example.toml  # config template (config.toml is gitignored)
+├── CONTEXT.md           # domain glossary & invariants
+├── pyproject.toml       # dependencies + tool config (pytest / ruff)
+├── uv.lock              # uv-locked dependency versions (committed)
+└── .python-version      # pinned Python version (read by uv)
 ```
 
 ## Testing
 
 ```bash
-uv run pytest          # 全量单测
-uv run ruff check .    # 静态检查
+uv run pytest          # full unit-test suite
+uv run ruff check .    # static checks
+uv run ruff format .   # format
 ```
 
 ## Requirements
 
-- macOS,[uv](https://docs.astral.sh/uv/)(自动管理 Python 3.12,见 `.python-version`)
-- Clash Verge 已运行且开启外部控制(API 端口与 secret 与配置一致)
-- WiFi 切换需相应系统权限;profile 兜底依赖"系统设置 → 隐私与安全性 → 辅助功能"授权
+- macOS, with [uv](https://docs.astral.sh/uv/) (auto-manages Python 3.12, see `.python-version`).
+- Clash Verge running with external control enabled (API port & secret matching the config).
+- WiFi switching needs the relevant system permissions; profile fallback depends on authorizing **System Settings → Privacy & Security → Accessibility**.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE) © Kingson Wu

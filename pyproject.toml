@@ -4,19 +4,28 @@ version = "0.1.0"
 description = "Layered WiFi + Clash Verge auto-switch daemon for macOS"
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
 authors = [{ name = "Kingson Wu" }]
 keywords = ["macos", "clash", "clash-verge", "wifi", "networking", "daemon", "launchd"]
 classifiers = [
+    "License :: OSI Approved :: MIT License",
     "Environment :: MacOS X",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: System :: Networking",
     "Topic :: Utilities",
 ]
+
 dependencies = [
     "requests>=2.28",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/OctopusGarage/net-auto-switch"
+Repository = "https://github.com/OctopusGarage/net-auto-switch"
+Issues = "https://github.com/OctopusGarage/net-auto-switch/issues"
 
 [project.scripts]
 net-auto-switch = "net_auto_switch.cli:main"
