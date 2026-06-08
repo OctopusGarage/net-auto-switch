@@ -68,7 +68,25 @@ def test_invalid_interval_raises(tmp_path):
         load_config(str(path))
 
 
-def test_patterns_override(tmp_path):
+def test_regions_override(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        [clash]
+        secret = "abc"
+        group_priority = ["US", "JP"]
+        [clash.regions]
+        US = "(US|美国)"
+        JP = "(JP|日本)"
+    """,
+    )
+    cfg = load_config(str(path))
+    assert cfg.clash.regions == {"US": "(US|美国)", "JP": "(JP|日本)"}
+    assert cfg.clash.group_priority == ["US", "JP"]
+
+
+def test_legacy_patterns_translate_to_regions(tmp_path):
+    # Old [clash.patterns] configs keep working: sg/jp/tokyo -> named regions.
     path = _write(
         tmp_path,
         """
@@ -77,13 +95,29 @@ def test_patterns_override(tmp_path):
         [clash.patterns]
         sg = "CUSTOM_SG"
         tokyo = "CUSTOM_TK"
+        trial = "TRIALX"
     """,
     )
     cfg = load_config(str(path))
-    assert cfg.clash.patterns.sg == "CUSTOM_SG"
-    assert cfg.clash.patterns.tokyo == "CUSTOM_TK"
-    # untouched pattern keeps default
-    assert cfg.clash.patterns.jp == "(JP|Japan|日本|🇯🇵)"
+    assert cfg.clash.regions["SG"] == "CUSTOM_SG"
+    assert cfg.clash.regions["Tokyo"] == "CUSTOM_TK"
+    assert cfg.clash.regions["JP_Other"] == "(JP|Japan|日本|🇯🇵)"  # untouched -> default
+    assert cfg.clash.trial == "TRIALX"
+
+
+def test_group_priority_undefined_region_raises(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        [clash]
+        secret = "abc"
+        group_priority = ["US"]
+        [clash.regions]
+        JP = "(JP|日本)"
+    """,
+    )
+    with pytest.raises(ConfigError):
+        load_config(str(path))
 
 
 def test_switch_cooldown_zero_allowed(tmp_path):

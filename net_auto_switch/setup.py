@@ -90,13 +90,22 @@ delay_limit = 300            # current-node stability threshold (ms)
 max_switch_per_min = 3
 max_profile_switch_per_30min = 1
 profiles_yaml = {profiles_yaml}
+trial = "试用"
 group_priority = {group_priority}
 
-[clash.patterns]
-sg = "(SG|Singapore|新加坡|🇸🇬)"
-jp = "(JP|Japan|日本|🇯🇵)"
-tokyo = "(Tokyo|东京)"
-trial = "试用"
+# Region name -> regex, matched in order (first match wins). Define any regions
+# you like — e.g. a US-first setup: group_priority = ["US", "JP"] with US/JP here.
+[clash.regions]
+SG = "(SG|Singapore|新加坡|🇸🇬)"
+Tokyo = "(Tokyo|东京)"
+JP_Other = "(JP|Japan|日本|🇯🇵)"
+
+# Optional: when Tokyo has no nodes by name, probe JP_Other nodes and move those
+# whose IP geolocates to Tokyo into it. Remove this table to disable.
+[clash.ip_enrich]
+target = "Tokyo"
+source = "JP_Other"
+match = "tokyo"
 """
 
 

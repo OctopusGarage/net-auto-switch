@@ -29,6 +29,30 @@ def test_classify_trial_still_classifies_name():
     assert c.classify_node("US-01") is None
 
 
+def test_classify_custom_region_us_first():
+    cfg = ClashConfig(
+        secret="x",
+        regions={"US": r"(US|United States|美国|🇺🇸)", "JP": r"(JP|日本)"},
+        group_priority=["US", "JP"],
+        ip_enrich={},
+    )
+    c = ClashController(cfg)
+    assert c.classify_node("US-LA-01 美国") == "US"
+    assert c.classify_node("JP-Tokyo 日本") == "JP"
+    assert c.classify_node("SG-01 新加坡") is None  # SG is no longer a configured region
+
+
+def test_grouping_with_custom_regions():
+    cfg = ClashConfig(secret="x", regions={"US": r"(US|美国)"}, group_priority=["US"], ip_enrich={})
+    c = ClashController(cfg)
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "us1"},
+        "美国-01": {"type": "Vmess"},
+        "JP-01": {"type": "Vmess"},
+    }
+    assert c.get_all_nodes_by_group(proxies) == {"US": ["美国-01"]}
+
+
 def test_select_node_stable_no_switch():
     c = make_ctrl()
     groups = {"SG": ["sg1"], "Tokyo": [], "JP_Other": []}
@@ -90,7 +114,7 @@ def test_run_cycle_dry_run_does_not_enrich_or_switch():
     with (
         mock.patch.object(c, "get_proxies", return_value=proxies),
         mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}),
-        mock.patch.object(c, "enrich_tokyo_via_ip") as enrich,
+        mock.patch.object(c, "enrich_via_ip") as enrich,
         mock.patch.object(c, "switch_proxy") as switch,
         mock.patch.object(c, "get_node_region") as region,
     ):
@@ -110,7 +134,7 @@ def test_run_cycle_non_dry_run_enriches_when_no_tokyo():
     with (
         mock.patch.object(c, "get_proxies", return_value=proxies),
         mock.patch.object(c, "test_all_delays", return_value={"jp1": 100}),
-        mock.patch.object(c, "enrich_tokyo_via_ip") as enrich,
+        mock.patch.object(c, "enrich_via_ip") as enrich,
         mock.patch.object(c, "switch_proxy"),
     ):
         c.run_cycle(dry_run=False)

@@ -10,21 +10,14 @@ log = logging.getLogger("net_auto_switch.clash")
 
 DEAD = 9999
 
-GROUP_NAMES = {
-    "SG": "新加坡",
-    "Tokyo": "日本东京",
-    "JP_Other": "日本其他地区",
-}
-
 
 class ClashController:
     def __init__(self, cfg):
         self.cfg = cfg
         self.headers = {"Authorization": f"Bearer {cfg.secret}"}
-        self.sg_re = re.compile(cfg.patterns.sg, re.IGNORECASE)
-        self.jp_re = re.compile(cfg.patterns.jp, re.IGNORECASE)
-        self.tokyo_re = re.compile(cfg.patterns.tokyo, re.IGNORECASE)
-        self.trial_re = re.compile(cfg.patterns.trial)
+        # name -> compiled regex, in config order (first match wins).
+        self.region_res = {n: re.compile(rx, re.IGNORECASE) for n, rx in cfg.regions.items()}
+        self.trial_re = re.compile(cfg.trial)
         self._switch_times = []
         self._profile_switch_times = []
 
@@ -65,16 +58,13 @@ class ClashController:
 
     # ----- grouping -----
     def classify_node(self, name):
-        if self.sg_re.search(name):
-            return "SG"
-        if self.jp_re.search(name):
-            if self.tokyo_re.search(name):
-                return "Tokyo"
-            return "JP_Other"
+        for region, rx in self.region_res.items():
+            if rx.search(name):
+                return region
         return None
 
     def get_all_nodes_by_group(self, proxies):
-        groups = {"SG": [], "Tokyo": [], "JP_Other": []}
+        groups = {name: [] for name in self.region_res}
         for name, data in proxies.items():
             if data["type"] in ("Selector", "URLTest", "Fallback"):
                 continue
@@ -99,19 +89,29 @@ class ClashController:
             log.warning(f"Location check error: {e}")
             return ""
 
-    def enrich_tokyo_via_ip(self, groups):
-        jp_others = groups["JP_Other"]
-        if not jp_others:
+    def enrich_via_ip(self, groups):
+        """Reclassify `source` nodes whose IP geolocates to `match` into `target`.
+
+        Config-driven via cfg.ip_enrich; a no-op if it's unset or its regions
+        aren't present (e.g. a US-only setup with no Tokyo region).
+        """
+        ie = self.cfg.ip_enrich or {}
+        target, source = ie.get("target"), ie.get("source")
+        match = (ie.get("match") or "").lower()
+        if not match or target not in groups or source not in groups:
             return
-        log.info("No Tokyo node by name, checking via IP location...")
-        check_count = min(len(jp_others), 10)
-        for i, node in enumerate(jp_others[:check_count], 1):
+        candidates = groups[source]
+        if not candidates:
+            return
+        log.info(f"No {target} node by name, checking {source} via IP location...")
+        check_count = min(len(candidates), 10)
+        for i, node in enumerate(candidates[:check_count], 1):
             log.info(f"  [{i}/{check_count}] Checking {node}...")
             region = self.get_node_region(node)
-            if region and region.lower() == "tokyo":
-                log.info(f"  -> {node} is Tokyo")
-                groups["Tokyo"].append(node)
-                groups["JP_Other"].remove(node)
+            if region and region.lower() == match:
+                log.info(f"  -> {node} is {target}")
+                groups[target].append(node)
+                groups[source].remove(node)
             time.sleep(0.3)
 
     # ----- selection -----
@@ -194,17 +194,17 @@ end tell
 
         groups = self.get_all_nodes_by_group(proxies)
         for g in self.cfg.group_priority:
-            log.info(f"{GROUP_NAMES.get(g, g)} nodes: {len(groups.get(g, []))}")
+            log.info(f"{g} nodes: {len(groups.get(g, []))}")
 
-        if not groups["Tokyo"] and not dry_run:
-            self.enrich_tokyo_via_ip(groups)
+        enrich_target = (self.cfg.ip_enrich or {}).get("target")
+        if enrich_target and not groups.get(enrich_target) and not dry_run:
+            self.enrich_via_ip(groups)
 
         current = proxies["GLOBAL"]["now"]
         current_group = next(
             (g for g in self.cfg.group_priority if current in groups.get(g, [])), None
         ) or self.classify_node(current)
-        group_label = GROUP_NAMES.get(current_group, current_group)
-        log.info(f"Current node: {current} (group: {group_label})")
+        log.info(f"Current node: {current} (group: {current_group})")
 
         all_nodes = []
         for g in self.cfg.group_priority:
@@ -212,7 +212,7 @@ end tell
                 if n not in all_nodes:
                     all_nodes.append(n)
         if not all_nodes:
-            log.info("No SG/Tokyo/JP_Other nodes found")
+            log.info("No nodes matched any configured region")
             return False
 
         delays = self.test_all_delays(all_nodes)

@@ -63,4 +63,4 @@ def test_render_config_toml_roundtrips(tmp_path):
     assert cfg.clash.group_priority == ["SG", "Tokyo"]
     # defaults preserved for untouched sections
     assert cfg.wifi.enabled is True
-    assert cfg.clash.patterns.tokyo == "(Tokyo|东京)"
+    assert cfg.clash.regions["Tokyo"] == "(Tokyo|东京)"

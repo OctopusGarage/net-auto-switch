@@ -137,8 +137,23 @@ uv run net-auto-switch --config /path/to/config.toml
 | `clash.max_switch_per_min` | `3` | 每分钟最多节点切换次数 |
 | `clash.max_profile_switch_per_30min` | `1` | 每 30 分钟最多 profile 切换次数 |
 | `clash.profiles_yaml` | *(Clash Verge 路径)* | profiles.yaml 位置 |
-| `clash.group_priority` | `["SG","Tokyo","JP_Other"]` | 地区降级优先级 |
-| `clash.patterns.*` | *(正则)* | SG / JP / Tokyo / 试用 的识别正则 |
+| `clash.group_priority` | `["SG","Tokyo","JP_Other"]` | 地区降级优先级(名称须在 `regions` 中定义) |
+| `clash.trial` | `试用` | 名字命中此正则的节点被忽略 |
+| `clash.regions` | SG / Tokyo / JP_Other | 地区名 → 正则,按顺序匹配(先命中者胜)。**完全可配** |
+| `clash.ip_enrich` | Tokyo ← JP_Other | 可选:按 IP 归属地把节点重分类进某地区;删掉即关闭 |
+
+**自定义地区** —— `regions` 完全可配,可以把任意地区设为主。比如「以美国为主」:
+
+```toml
+group_priority = ["US", "JP", "SG"]
+
+[clash.regions]
+US = "(US|United States|美国|🇺🇸)"
+JP = "(JP|Japan|日本|🇯🇵)"
+SG = "(SG|Singapore|新加坡|🇸🇬)"
+```
+
+节点按**第一个**命中的地区归类(更具体的写前面);一个都不命中的节点会被忽略。
 
 ## Production Deployment (macOS launchd)
 

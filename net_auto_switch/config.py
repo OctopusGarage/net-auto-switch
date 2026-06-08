@@ -19,12 +19,19 @@ class WifiConfig:
     interface: str = "en0"
 
 
-@dataclass
-class ClashPatterns:
-    sg: str = r"(SG|Singapore|新加坡|🇸🇬)"
-    jp: str = r"(JP|Japan|日本|🇯🇵)"
-    tokyo: str = r"(Tokyo|东京)"
-    trial: str = r"试用"
+# Region name -> regex matched (case-insensitive) against node names. Order
+# matters: classification returns the first matching region, so list more
+# specific regions before broader ones. Fully configurable — define any regions
+# you like (US, HK, …); see docs/adr/0007.
+DEFAULT_REGIONS = {
+    "SG": r"(SG|Singapore|新加坡|🇸🇬)",
+    "Tokyo": r"(Tokyo|东京)",
+    "JP_Other": r"(JP|Japan|日本|🇯🇵)",
+}
+DEFAULT_TRIAL = r"试用"
+# Optional: when the `target` region has no nodes by name, probe the `source`
+# region's nodes and move those whose IP geolocates to `match` into `target`.
+DEFAULT_IP_ENRICH = {"target": "Tokyo", "source": "JP_Other", "match": "tokyo"}
 
 
 @dataclass
@@ -39,7 +46,9 @@ class ClashConfig:
         "~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles.yaml"
     )
     group_priority: list = field(default_factory=lambda: ["SG", "Tokyo", "JP_Other"])
-    patterns: ClashPatterns = field(default_factory=ClashPatterns)
+    regions: dict = field(default_factory=lambda: dict(DEFAULT_REGIONS))
+    trial: str = DEFAULT_TRIAL
+    ip_enrich: dict = field(default_factory=lambda: dict(DEFAULT_IP_ENRICH))
 
 
 @dataclass
@@ -80,9 +89,19 @@ def load_config(path=None):
         data = tomllib.load(f)
 
     clash_data = dict(data.get("clash", {}))
-    patterns_data = clash_data.pop("patterns", {})
+    patterns_data = clash_data.pop("patterns", None)
+    regions_data = clash_data.pop("regions", None)
     clash = _from_dict(ClashConfig, clash_data)
-    clash.patterns = _from_dict(ClashPatterns, patterns_data)
+    if regions_data:
+        clash.regions = dict(regions_data)
+    elif patterns_data:
+        # Backward compatibility: legacy [clash.patterns] (sg/jp/tokyo/trial).
+        clash.regions = {
+            "SG": patterns_data.get("sg", DEFAULT_REGIONS["SG"]),
+            "Tokyo": patterns_data.get("tokyo", DEFAULT_REGIONS["Tokyo"]),
+            "JP_Other": patterns_data.get("jp", DEFAULT_REGIONS["JP_Other"]),
+        }
+        clash.trial = patterns_data.get("trial", clash.trial)
 
     cfg = Config(
         main_interval=data.get("main_interval", Config.main_interval),
@@ -102,3 +121,11 @@ def _validate(cfg):
         raise ConfigError("wifi.switch_cooldown must be >= 0")
     if not (0 < cfg.clash.proxy_port < 65536):
         raise ConfigError("clash.proxy_port out of range")
+    if not cfg.clash.regions:
+        raise ConfigError("clash.regions must define at least one region")
+    for g in cfg.clash.group_priority:
+        if g not in cfg.clash.regions:
+            raise ConfigError(
+                f"group_priority references undefined region '{g}' "
+                f"(defined: {list(cfg.clash.regions)})"
+            )

@@ -139,8 +139,25 @@ All settings live in `config.toml` (template: `config.example.toml`).
 | `clash.max_switch_per_min` | `3` | Max node switches per minute |
 | `clash.max_profile_switch_per_30min` | `1` | Max profile switches per 30 minutes |
 | `clash.profiles_yaml` | *(Clash Verge path)* | Location of `profiles.yaml` |
-| `clash.group_priority` | `["SG","Tokyo","JP_Other"]` | Region fallback priority |
-| `clash.patterns.*` | *(regex)* | Recognition regexes for SG / JP / Tokyo / trial |
+| `clash.group_priority` | `["SG","Tokyo","JP_Other"]` | Region fallback priority (names must be defined in `regions`) |
+| `clash.trial` | `试用` | Nodes whose name matches this regex are ignored |
+| `clash.regions` | SG / Tokyo / JP_Other | Region name → regex, matched in order (first match wins). Fully configurable |
+| `clash.ip_enrich` | Tokyo ← JP_Other | Optional: reclassify nodes into a region by IP geolocation; remove to disable |
+
+**Custom regions** — `regions` is fully configurable, so you can prefer any region.
+For a US-first setup:
+
+```toml
+group_priority = ["US", "JP", "SG"]
+
+[clash.regions]
+US = "(US|United States|美国|🇺🇸)"
+JP = "(JP|Japan|日本|🇯🇵)"
+SG = "(SG|Singapore|新加坡|🇸🇬)"
+```
+
+Nodes are classified by the **first** matching region (define more specific ones
+first); anything matching none is left untouched.
 
 ## Production Deployment (macOS launchd)
 
