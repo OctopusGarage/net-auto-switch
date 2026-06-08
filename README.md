@@ -19,6 +19,19 @@ A **layered network self-healing daemon** for macOS: the lower layer switches Wi
 - **Fault isolation** — a transient error in any one layer never takes down the daemon.
 - **Launch at boot** — a launchd service with `RunAtLoad` + `KeepAlive` (auto-restart on crash).
 
+## Feature Overview
+
+| Area | What it does |
+|------|--------------|
+| **Layered orchestration** | Each cycle runs the WiFi layer first, then the Clash layer — get online, then optimize the proxy. Layers are isolated: a failure in one never affects the other or kills the daemon. |
+| **WiFi layer** (optional, low-frequency) | Detects the current network and ping-tests latency / loss; flags a "bad" network past your thresholds; builds candidates from *preferred ∩ currently-visible* networks; switches only if a candidate is faster by at least `min_improvement_ms`. Guarded by a separate check interval **and** a post-switch cooldown. |
+| **Clash node selection** | Groups nodes by region (SG / Tokyo / JP_Other, regex-configurable); keeps the current node while it's stable (`delay_limit`); otherwise speed-tests and picks the best in-group, falling back across regions by `group_priority`. JP nodes that don't name a city are checked by IP geolocation to spot Tokyo. |
+| **Profile fallback** | When every node is unreachable, switches the subscription profile via AppleScript UI automation. |
+| **Rate limiting** | Node switches ≤ `max_switch_per_min`; profile switches ≤ `max_profile_switch_per_30min`. |
+| **Run modes** | Long-running daemon, single cycle (`--once`), and zero-side-effect rehearsal (`--dry-run`); custom config via `--config`. |
+| **Install & ops** | One-line `curl` installer, guided `init` wizard (auto-detects Clash Verge), one-command `update`, and a launchd service (boot start + crash restart). Logs rotate daily and self-clean after 14 days. |
+| **Config & safety** | Everything tunable lives in `config.toml` (validated on load); the secret is never committed — only `config.example.toml` is tracked. |
+
 ## Architecture
 
 ```
