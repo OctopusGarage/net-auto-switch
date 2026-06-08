@@ -17,8 +17,29 @@ from .config import DEFAULT_REGIONS
 CLASH_VERGE_DIR = os.path.expanduser(
     "~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev"
 )
+CLASH_VERGE_APP = "/Applications/Clash Verge.app"
 RUNTIME_CONFIG = "clash-verge.yaml"
 PROFILES_YAML = "profiles.yaml"
+CLASH_VERGE_RELEASES = "https://github.com/clash-verge-rev/clash-verge-rev/releases"
+
+
+def clash_verge_diagnosis(base_dir=CLASH_VERGE_DIR, app_path=CLASH_VERGE_APP):
+    """Explain why detect_clash_verge() found nothing, with a next step."""
+    if os.path.isdir(base_dir):
+        return (
+            "Clash Verge's config folder exists but has no clash-verge.yaml yet.\n"
+            "  Launch Clash Verge once and import a subscription, then re-run."
+        )
+    if os.path.exists(app_path):
+        return (
+            "Clash Verge is installed but hasn't run yet.\n"
+            "  Launch it once, import your subscription, then re-run."
+        )
+    return (
+        "Clash Verge Rev doesn't appear to be installed.\n"
+        f"  Install it from {CLASH_VERGE_RELEASES}, import your subscription, then re-run.\n"
+        "  (This tool targets Clash Verge Rev specifically, not ClashX or other forks.)"
+    )
 
 
 @dataclass

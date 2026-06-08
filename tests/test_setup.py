@@ -1,6 +1,7 @@
 from net_auto_switch.config import load_config
 from net_auto_switch.setup import (
     DetectedClash,
+    clash_verge_diagnosis,
     detect_clash_verge,
     detect_regions,
     parse_subscriptions,
@@ -108,6 +109,26 @@ def test_parse_subscriptions():
 
 def test_parse_subscriptions_empty():
     assert parse_subscriptions("foo: bar\n") == []
+
+
+def test_clash_verge_diagnosis_states(tmp_path):
+    missing_app = str(tmp_path / "NoApp.app")
+
+    # nothing installed
+    msg = clash_verge_diagnosis(str(tmp_path / "nope"), missing_app)
+    assert "doesn't appear to be installed" in msg
+
+    # app present but never run (no config dir)
+    app = tmp_path / "Clash Verge.app"
+    app.mkdir()
+    msg = clash_verge_diagnosis(str(tmp_path / "nope"), str(app))
+    assert "hasn't run yet" in msg
+
+    # config dir exists but no clash-verge.yaml
+    cfg_dir = tmp_path / "cv"
+    cfg_dir.mkdir()
+    msg = clash_verge_diagnosis(str(cfg_dir), missing_app)
+    assert "no clash-verge.yaml" in msg
 
 
 def test_render_config_toml_custom_regions(tmp_path):

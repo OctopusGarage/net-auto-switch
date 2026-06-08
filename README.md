@@ -84,6 +84,10 @@ uv run net-auto-switch init          # interactive
 uv run net-auto-switch init --yes    # non-interactive (accept all defaults)
 ```
 
+At every step `init` checks the environment and tells you exactly what to fix —
+if you're not on macOS, Clash Verge isn't installed / hasn't run / isn't
+reachable, the secret is wrong, or there are no working nodes.
+
 Prefer to configure by hand (or not using Clash Verge)? Copy the template
 instead: `cp config.example.toml config.toml` and edit it.
 

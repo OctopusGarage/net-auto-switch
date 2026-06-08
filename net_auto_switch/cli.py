@@ -11,8 +11,8 @@ from .clash import ClashController
 from .config import ClashConfig, ConfigError, load_config
 from .orchestrator import Orchestrator
 from .setup import (
-    CLASH_VERGE_DIR,
     REGION_CATALOG,
+    clash_verge_diagnosis,
     detect_clash_verge,
     detect_regions,
     health_check,
@@ -65,11 +65,14 @@ def cmd_init(argv):
     p.add_argument("--no-service", action="store_true", help="Skip the launchd service step")
     args = p.parse_args(argv)
 
+    if sys.platform != "darwin":
+        print("✗ net-auto-switch is macOS-only (it relies on launchd, networksetup, AppleScript).")
+        return 1
+
     print("🔍 Detecting Clash Verge…")
     detected = detect_clash_verge()
     if detected is None:
-        print(f"✗ Clash Verge config not found at:\n    {CLASH_VERGE_DIR}")
-        print("  Make sure Clash Verge is installed, or copy config.example.toml manually.")
+        print(f"✗ {clash_verge_diagnosis()}")
         return 1
     secret_state = "(set)" if detected.secret else "(empty)"
     print(f"✓ api={detected.api}  proxy_port={detected.proxy_port}  secret={secret_state}")
@@ -79,8 +82,18 @@ def cmd_init(argv):
         version = probe_api(detected.api, detected.secret)
         print(f"✓ Connected to Clash API (version {version})")
     except Exception as e:
-        print(f"⚠ Could not reach Clash API: {e}")
-        print("  Is Clash Verge running with external control enabled?")
+        import requests
+
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if isinstance(e, requests.exceptions.HTTPError) and status in (401, 403):
+            print("⚠ Clash API reachable but the secret was rejected (it may have changed).")
+            print("  Check Clash Verge → Settings → External Controller secret; then re-run.")
+        elif isinstance(e, requests.exceptions.ConnectionError):
+            print("⚠ Can't reach the Clash API — Clash Verge isn't running, or its external")
+            print("  controller is off. Open Clash Verge → Settings → enable the external")
+            print("  controller (Clash API), confirm it's running, then re-run.")
+        else:
+            print(f"⚠ Could not reach Clash API: {e}")
         if not args.yes and not _confirm("Continue anyway?", default=False):
             return 1
 
@@ -187,6 +200,8 @@ def cmd_init(argv):
     print("  • Launch Clash Verge at login so its API + subscription auto-update stay available")
     print("  • Profile fallback needs Accessibility: System Settings → Privacy & Security")
     print("    → Accessibility (allow your terminal / the launchd agent)")
+    print("  • WiFi auto-switch / SSID reads may need Location Services on recent macOS:")
+    print("    System Settings → Privacy & Security → Location Services")
     print("🎉 Done. Try a dry run: uv run net-auto-switch --once --dry-run")
     return 0
 

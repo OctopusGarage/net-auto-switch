@@ -81,6 +81,9 @@ uv run net-auto-switch init          # 交互式
 uv run net-auto-switch init --yes    # 全自动(采用所有默认值)
 ```
 
+`init` 每一步都会检查环境并明确告诉你怎么修 —— 比如不是 macOS、Clash Verge 没装 /
+没运行 / 连不上、secret 不对、或没有可用节点时,都会给出对应指引。
+
 想手动配置(或不使用 Clash Verge)?改用模板:
 `cp config.example.toml config.toml`,然后编辑它。
 
