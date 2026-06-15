@@ -28,6 +28,7 @@ A **layered network self-healing daemon** for macOS: the lower layer switches Wi
 | **Clash node selection** | Groups nodes by region (SG / Tokyo / JP_Other, regex-configurable); keeps the current node while it's stable (`delay_limit`); otherwise speed-tests and picks the best in-group, falling back across regions by `group_priority`. JP nodes that don't name a city are checked by IP geolocation to spot Tokyo. |
 | **Profile fallback** | When every node is unreachable, switches the subscription profile via AppleScript UI automation. |
 | **Rate limiting** | Node switches ≤ `max_switch_per_min`; profile switches ≤ `max_profile_switch_per_30min`. |
+| **Desktop notifications** | On every real switch (Clash node / profile / WiFi) a macOS banner shows what changed — for node switches it includes the exit operator (AWS / 腾讯云 / …). Toggle with top-level `notify`; never fires under `--dry-run`. |
 | **Run modes** | Long-running daemon, single cycle (`--once`), and zero-side-effect rehearsal (`--dry-run`); custom config via `--config`. |
 | **Install & ops** | One-line `curl` installer, guided `init` wizard (auto-detects Clash Verge), one-command `update`, and a launchd service (boot start + crash restart). Logs rotate daily and self-clean after 14 days. |
 | **Config & safety** | Everything tunable lives in `config.toml` (validated on load); the secret is never committed — only `config.example.toml` is tracked. |
@@ -117,7 +118,14 @@ uv run net-auto-switch --once --dry-run    # single round, rehearsal
 uv run net-auto-switch --once              # single round
 uv run net-auto-switch                      # long-running
 uv run net-auto-switch --config /path/to/config.toml
+uv run net-auto-switch whois <domain|ip>…   # which operator / cloud owns a host
 ```
+
+`whois` is a standalone lookup (independent of the daemon): it resolves a domain
+to its IP(s), runs `whois`, and labels the owning operator / cloud provider
+(腾讯云, AWS, Cloudflare…). It resolves via **Cloudflare DoH by default** so it sees
+the real address even under TUN-mode DNS hijacking; pass `--no-doh` for plain system
+DNS, or `-a` to query the domain's authoritative NS. `whois -h` shows all options.
 
 `uv run net-auto-switch` is equivalent to `uv run python -m net_auto_switch.cli`.
 
@@ -210,7 +218,7 @@ Retention is controlled by `LOG_BACKUP_DAYS` in `cli.py` (default 14).
 
 ```
 net-auto-switch/
-├── net_auto_switch/     # package: config / setup / wifi / clash / orchestrator / cli
+├── net_auto_switch/     # package: config / setup / wifi / clash / orchestrator / whois / cli
 ├── tests/               # pytest unit tests
 ├── scripts/             # ops scripts + launchd plist + wrapper
 ├── docs/

@@ -1,4 +1,5 @@
 main_interval = 600          # 主循环间隔(秒)
+notify = true                # 每次真实切换(节点/订阅/WiFi)弹 macOS 通知;--dry-run 不弹
 
 [wifi]
 enabled = true

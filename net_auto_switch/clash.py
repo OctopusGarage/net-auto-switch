@@ -12,8 +12,9 @@ DEAD = 9999
 
 
 class ClashController:
-    def __init__(self, cfg):
+    def __init__(self, cfg, notify=False):
         self.cfg = cfg
+        self.notify = notify
         self.headers = {"Authorization": f"Bearer {cfg.secret}"}
         # name -> compiled regex, in config order (first match wins).
         self.region_res = {n: re.compile(rx, re.IGNORECASE) for n, rx in cfg.regions.items()}
@@ -103,6 +104,33 @@ class ClashController:
             return r.json().get("region", "")
         except Exception as e:
             log.warning(f"Location check error: {e}")
+            return ""
+
+    def get_exit_operator(self):
+        """Best-effort label for the egress IP's operator, via the local proxy.
+
+        Reuses the ipwhois.app probe (same plumbing as get_node_region) and maps
+        its isp/org through whois.OPERATOR_HINTS for a friendly label like
+        'AWS (US)'. Returns '' on any failure. This is an IP-probe side effect,
+        so callers must only use it after a real switch (never in dry-run, see
+        ADR-0003).
+        """
+        from . import whois
+
+        try:
+            proxies_cfg = {
+                "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
+                "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
+            }
+            r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
+            j = r.json()
+            isp = j.get("isp") or ""
+            org = j.get("org") or ""
+            operator = whois.match_operator(f"{isp} {org}") or isp or org or "unknown"
+            country = j.get("country_code") or ""
+            return f"{operator} ({country})" if country else operator
+        except Exception as e:
+            log.warning(f"Exit operator check error: {e}")
             return ""
 
     def enrich_via_ip(self, groups, group):
@@ -302,6 +330,10 @@ end tell
                     name = p.get("name") or p.get("uid")
                     if not dry_run and self.switch_profile_by_name(name):
                         log.info("Profile switched, will retry next cycle")
+                        if self.notify:
+                            from . import notify
+
+                            notify.send("📑 订阅已切换", name, "所有节点不可用,已回退订阅")
                         return True
                     if dry_run:
                         log.info(f"[DRY-RUN] Would switch profile to {name}")
@@ -318,7 +350,14 @@ end tell
                 log.info(f"[DRY-RUN] Would switch to {target}")
             elif self.switch_proxy(target, group):
                 self._switch_times.append(now)
-                log.info(f"Switched to {target}")
+                operator = self.get_exit_operator()
+                log.info(f"Switched to {target}" + (f" (exit: {operator})" if operator else ""))
+                if self.notify:
+                    from . import notify
+
+                    notify.send(
+                        "🔀 代理节点已切换", target, f"出口: {operator}" if operator else ""
+                    )
             else:
                 log.error("Switch failed")
         else:

@@ -58,6 +58,9 @@ class ClashConfig:
 @dataclass
 class Config:
     main_interval: int = 600
+    # Pop up a macOS notification banner on every real switch (Clash node /
+    # profile / WiFi). Never fires under --dry-run.
+    notify: bool = True
     wifi: WifiConfig = field(default_factory=WifiConfig)
     clash: ClashConfig = field(default_factory=ClashConfig)
 
@@ -109,6 +112,7 @@ def load_config(path=None):
 
     cfg = Config(
         main_interval=data.get("main_interval", Config.main_interval),
+        notify=data.get("notify", Config.notify),
         wifi=_from_dict(WifiConfig, data.get("wifi", {})),
         clash=clash,
     )
