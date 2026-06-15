@@ -1,0 +1,22 @@
+# Keep release archives lean. The primary download is the curated asset built by
+# scripts/release-package.sh (see ADR-0014); this list keeps the *source-archive
+# fallback* lean too. GitHub's "Source code" tarball/zip is produced by
+# `git archive`, which honors `export-ignore` — so these developer-only files are
+# excluded from downloads while staying in the repo. Anything the runtime needs
+# (net_auto_switch/, pyproject.toml, uv.lock, .python-version, README.md,
+# config.example.toml, the runtime scripts/, install.sh, LICENSE) is NOT listed.
+/tests/                     export-ignore
+/.github/                   export-ignore
+/docs/                      export-ignore
+/.claude/                   export-ignore
+/CLAUDE.md                  export-ignore
+/CONTRIBUTING.md            export-ignore
+/CONTEXT.md                 export-ignore
+/SECURITY.md                export-ignore
+/README.zh-CN.md            export-ignore
+/.gitleaks.toml             export-ignore
+/.gitignore                 export-ignore
+/.gitattributes             export-ignore
+/scripts/pre-commit         export-ignore
+/scripts/install-hooks.sh   export-ignore
+/scripts/release-package.sh export-ignore
