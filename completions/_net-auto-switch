@@ -1,0 +1,62 @@
+#compdef net-auto-switch
+# zsh completion for net-auto-switch.
+# Install: put this file (named `_net-auto-switch`) in a directory on your $fpath,
+# then `autoload -Uz compinit && compinit`. See completions/README.md.
+
+_net-auto-switch() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+
+  local -a subcmds
+  subcmds=(
+    'init:Guided setup wizard (macOS)'
+    'update:Update to the latest release'
+    'whois:Resolve node servers to their operator / cloud provider'
+    'service:Install / uninstall / check the background service'
+  )
+
+  _arguments -C \
+    '(- *)'{-h,--help}'[Show help]' \
+    '--once[Run a single cycle and exit]' \
+    '--dry-run[Log actions without switching]' \
+    '--config[Path to config.toml]:config file:_files' \
+    '1: :->cmd' \
+    '*:: :->args'
+
+  case $state in
+    cmd)
+      _describe -t commands 'net-auto-switch command' subcmds
+      ;;
+    args)
+      case $line[1] in
+        init)
+          _arguments \
+            '(-y --yes)'{-y,--yes}'[Accept defaults, no prompts]' \
+            '--config[Output config path]:config file:_files' \
+            '--no-service[Skip the service install step]'
+          ;;
+        update)
+          _arguments \
+            '--no-restart[Do not reload the service after updating]' \
+            '--force[Reinstall even if already current]' \
+            '--version[Install a specific tag (default: latest)]:tag:'
+          ;;
+        whois)
+          _arguments \
+            '(-s --server)'{-s,--server}'[DNS server (default 1.1.1.1)]:dns server:' \
+            '(-a --authoritative)'{-a,--authoritative}'[Query authoritative NS, then ask it directly (implies --no-doh)]' \
+            '--no-doh[Use system DNS instead of Cloudflare DoH]' \
+            '--config[Path to config.toml (only when scanning Clash nodes)]:config file:_files' \
+            '*:target (domain or IP):'
+          ;;
+        service)
+          _arguments \
+            '1:action:(install uninstall status)' \
+            '--config[Path to config.toml (for install)]:config file:_files'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_net-auto-switch "$@"

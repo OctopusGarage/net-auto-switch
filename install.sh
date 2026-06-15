@@ -92,6 +92,33 @@ exec uv run --project "$INSTALL_DIR" net-auto-switch "\$@"
 EOF
 chmod +x "$BIN_DIR/net-auto-switch"
 
+# 5b. zsh tab-completion (macOS default shell). Idempotent: each run strips any
+#     previous block and writes exactly one, so re-installing never duplicates it.
+#     It points at $INSTALL_DIR/completions (refreshed in place by `update`), so
+#     updates need no re-registration.
+register_zsh_completion() {
+  local rc="$HOME/.zshrc"
+  local start="# >>> net-auto-switch completion >>>"
+  local end="# <<< net-auto-switch completion <<<"
+  [ -f "$INSTALL_DIR/completions/_net-auto-switch" ] || return 0
+  [ -f "$rc" ] || touch "$rc"
+  if grep -qF "$start" "$rc"; then
+    local tmp
+    tmp="$(mktemp)"
+    awk -v s="$start" -v e="$end" '
+      $0==s {skip=1} skip && $0==e {skip=0; next} !skip {print}
+    ' "$rc" >"$tmp" && mv "$tmp" "$rc"
+  fi
+  {
+    printf '%s\n' "$start"
+    printf 'fpath=("%s/completions" $fpath)\n' "$INSTALL_DIR"
+    printf 'autoload -Uz compinit && compinit\n'
+    printf '%s\n' "$end"
+  } >>"$rc"
+}
+info "Enabling zsh tab-completion..."
+register_zsh_completion
+
 # 6. guided setup - read prompts from the terminal even when piped via curl
 info "Starting guided setup..."
 if [ -e /dev/tty ]; then
@@ -102,6 +129,7 @@ fi
 
 info "Done. Installed $TAG at $INSTALL_DIR"
 info "Update later with:  net-auto-switch update"
+info "Tab-completion: run 'exec zsh' (or open a new shell) to activate it."
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) info "Add $BIN_DIR to your PATH to use the 'net-auto-switch' command." ;;

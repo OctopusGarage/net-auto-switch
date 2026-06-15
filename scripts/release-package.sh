@@ -29,6 +29,7 @@ trap 'rm -rf "$TMP"' EXIT
 INCLUDE=(
   net_auto_switch
   scripts
+  completions
   pyproject.toml
   uv.lock
   .python-version
