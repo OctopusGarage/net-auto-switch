@@ -1,0 +1,61 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please redact any secrets (Clash API secret, tokens)
+        from logs and config before pasting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "e.g. 14.4 (Sonoma)"
+    validations:
+      required: true
+  - type: input
+    id: clash-verge
+    attributes:
+      label: Clash Verge version
+      placeholder: "e.g. 2.0.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it running?
+      options:
+        - launchd service
+        - manual (scripts/start.sh)
+        - --once / foreground
+    validations:
+      required: true
+  - type: textarea
+    id: dry-run
+    attributes:
+      label: Dry-run output
+      description: Output of `uv run net-auto-switch --once --dry-run` (redact secrets).
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: From `~/Library/Logs/net_auto_switch.log` (redact secrets).
+      render: shell
