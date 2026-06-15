@@ -12,6 +12,7 @@ _net-auto-switch() {
     'init:Guided setup wizard (macOS)'
     'update:Update to the latest release'
     'whois:Resolve node servers to their operator / cloud provider'
+    'connections:List active Clash connections (host -> outbound node)'
     'service:Install / uninstall / check the background service'
   )
 
@@ -48,6 +49,13 @@ _net-auto-switch() {
             '--no-doh[Use system DNS instead of Cloudflare DoH]' \
             '--config[Path to config.toml (only when scanning Clash nodes)]:config file:_files' \
             '*:target (domain or IP):'
+          ;;
+        connections)
+          _arguments \
+            '--config[Path to config.toml]:config file:_files' \
+            '--whois[Label each target with IP / operator / country (slower)]' \
+            '--raw[List every connection (default folds by host+node with a count)]' \
+            '(-w --watch)'{-w,--watch}'[Live refresh (default every 2s); Ctrl-C to quit]:seconds:'
           ;;
         service)
           _arguments \

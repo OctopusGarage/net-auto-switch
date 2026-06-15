@@ -120,6 +120,7 @@ uv run net-auto-switch --once              # single round
 uv run net-auto-switch                      # long-running
 uv run net-auto-switch --config /path/to/config.toml
 uv run net-auto-switch whois <domain|ip>…   # which operator / cloud owns a host
+uv run net-auto-switch connections          # live: which host → which proxy node
 ```
 
 `whois` is a standalone lookup (independent of the daemon): it resolves a domain
@@ -127,6 +128,14 @@ to its IP(s), runs `whois`, and labels the owning operator / cloud provider
 (腾讯云, AWS, Cloudflare…). It resolves via **Cloudflare DoH by default** so it sees
 the real address even under TUN-mode DNS hijacking; pass `--no-doh` for plain system
 DNS, or `-a` to query the domain's authoritative NS. `whois -h` shows all options.
+
+`connections` reads Clash's `/connections` API and prints what the machine is
+contacting right now and through which outbound node — `host → node → rule`. Rows
+are folded by `host + node` with a connection count by default (`--raw` lists each
+one). Add `--whois` to label each target's IP / operator / country (it resolves the
+domain when Clash doesn't expose an IP, i.e. proxied connections), or `-w [SECONDS]`
+to refresh live (default every 2s). It only sees traffic that goes through Clash
+(proxied / TUN), not direct/bypassed traffic. `connections -h` shows all options.
 
 `uv run net-auto-switch` is equivalent to `uv run python -m net_auto_switch.cli`.
 

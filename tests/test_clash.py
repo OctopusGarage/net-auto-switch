@@ -1,7 +1,88 @@
 from unittest import mock
 
-from net_auto_switch.clash import ClashController
+from net_auto_switch.clash import (
+    ClashController,
+    aggregate_connections,
+    summarize_connections,
+)
 from net_auto_switch.config import ClashConfig
+
+
+def test_summarize_connections_maps_host_node_rule():
+    conns = [
+        {
+            "metadata": {
+                "host": "example.com",
+                "destinationIP": "1.2.3.4",
+                "destinationPort": "443",
+                "network": "TCP",
+            },
+            "chains": ["JP-1", "Proxy"],  # chains[0] is the actual outbound node
+            "rule": "DomainSuffix",
+            "rulePayload": "example.com",
+        },
+        {
+            "metadata": {
+                "host": "",  # no SNI/host -> falls back to the destination IP
+                "destinationIP": "8.8.8.8",
+                "destinationPort": "53",
+                "network": "udp",
+            },
+            "chains": ["DIRECT"],
+            "rule": "GEOIP",
+            "rulePayload": "CN",
+        },
+    ]
+    by_host = {r.host: r for r in summarize_connections(conns)}
+
+    assert by_host["example.com"].node == "JP-1"
+    assert by_host["example.com"].dest_ip == "1.2.3.4"
+    assert by_host["example.com"].rule == "DomainSuffix(example.com)"
+    assert by_host["example.com"].network == "tcp"
+    # host empty -> shows the destination IP, node is DIRECT
+    assert by_host["8.8.8.8"].node == "DIRECT"
+    assert by_host["8.8.8.8"].rule == "GEOIP(CN)"
+
+
+def test_summarize_connections_handles_missing_fields():
+    rows = summarize_connections([{}])
+    assert rows[0].host == ""
+    assert rows[0].node == "?"
+    assert rows[0].rule == ""
+
+
+def test_aggregate_connections_folds_by_host_and_node():
+    conns = [
+        {
+            "metadata": {"host": "t.org", "destinationIP": ""},
+            "chains": ["JP"],
+            "rule": "DomainSuffix",
+            "rulePayload": "t.org",
+        },
+        {"metadata": {"host": "t.org", "destinationIP": "1.1.1.1"}, "chains": ["JP"]},
+        {"metadata": {"host": "a.com"}, "chains": ["JP"]},
+    ]
+    groups = aggregate_connections(summarize_connections(conns))
+    by = {(g.host, g.node): g for g in groups}
+
+    assert by[("t.org", "JP")].count == 2
+    assert by[("t.org", "JP")].dest_ip == "1.1.1.1"  # first non-empty IP kept
+    assert by[("t.org", "JP")].rule == "DomainSuffix(t.org)"
+    assert by[("a.com", "JP")].count == 1
+
+
+def test_summarize_connections_sorted_by_host_then_node():
+    conns = [
+        {"metadata": {"host": "b.com"}, "chains": ["N2"]},
+        {"metadata": {"host": "a.com"}, "chains": ["N2"]},
+        {"metadata": {"host": "a.com"}, "chains": ["N1"]},
+    ]
+    rows = summarize_connections(conns)
+    assert [(r.host, r.node) for r in rows] == [
+        ("a.com", "N1"),
+        ("a.com", "N2"),
+        ("b.com", "N2"),
+    ]
 
 
 def make_ctrl():

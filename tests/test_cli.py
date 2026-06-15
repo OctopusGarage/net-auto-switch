@@ -469,3 +469,178 @@ def test_setup_logging_uses_daily_rotation(tmp_path, monkeypatch):
             if isinstance(h, logging.handlers.TimedRotatingFileHandler):
                 h.close()
         root.handlers[:] = saved
+
+
+def _connections_config(tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        """
+[clash]
+secret = "abc"
+api = "http://127.0.0.1:9097"
+""",
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_cmd_connections_lists_host_to_node(tmp_path, monkeypatch, capsys):
+    config = _connections_config(tmp_path)
+
+    class FakeClashController:
+        def __init__(self, cfg):
+            pass
+
+        def get_connections(self):
+            return [
+                {
+                    "metadata": {
+                        "host": "github.com",
+                        "destinationIP": "140.82.112.3",
+                        "destinationPort": "443",
+                        "network": "tcp",
+                    },
+                    "chains": ["US-1", "Proxy"],
+                    "rule": "DomainSuffix",
+                    "rulePayload": "github.com",
+                }
+            ]
+
+    monkeypatch.setattr(cli, "ClashController", FakeClashController)
+
+    assert cli.cmd_connections(["--config", str(config)]) == 0
+    out = capsys.readouterr().out
+    assert "活动连接: 1" in out
+    assert "github.com" in out
+    assert "US-1" in out
+    assert "DomainSuffix(github.com)" in out
+
+
+def _dup_controller(n):
+    class FakeClashController:
+        def __init__(self, cfg):
+            pass
+
+        def get_connections(self):
+            return [
+                {
+                    "metadata": {"host": "api.telegram.org", "destinationIP": ""},
+                    "chains": ["JP-1"],
+                    "rule": "DomainSuffix",
+                    "rulePayload": "telegram.org",
+                }
+                for _ in range(n)
+            ]
+
+    return FakeClashController
+
+
+def test_cmd_connections_aggregates_duplicates_by_default(tmp_path, monkeypatch, capsys):
+    config = _connections_config(tmp_path)
+    monkeypatch.setattr(cli, "ClashController", _dup_controller(5))
+
+    assert cli.cmd_connections(["--config", str(config)]) == 0
+    out = capsys.readouterr().out
+    assert "活动连接: 5 → 1 组 (host+node)" in out
+    assert "CONNS" in out
+    assert out.count("api.telegram.org") == 1  # folded into one row
+    # the count cell shows 5
+    row = next(line for line in out.splitlines() if "api.telegram.org" in line)
+    assert "5" in row
+
+
+def test_cmd_connections_raw_lists_each(tmp_path, monkeypatch, capsys):
+    config = _connections_config(tmp_path)
+    monkeypatch.setattr(cli, "ClashController", _dup_controller(3))
+
+    assert cli.cmd_connections(["--config", str(config), "--raw"]) == 0
+    out = capsys.readouterr().out
+    assert "CONNS" not in out
+    assert out.count("api.telegram.org") == 3  # one line per connection
+
+
+def test_cmd_connections_empty(tmp_path, monkeypatch, capsys):
+    config = _connections_config(tmp_path)
+
+    class FakeClashController:
+        def __init__(self, cfg):
+            pass
+
+        def get_connections(self):
+            return []
+
+    monkeypatch.setattr(cli, "ClashController", FakeClashController)
+
+    assert cli.cmd_connections(["--config", str(config)]) == 0
+    assert "活动连接: 0" in capsys.readouterr().out
+
+
+def test_cmd_connections_whois_enriches_operator(tmp_path, monkeypatch, capsys):
+    config = _connections_config(tmp_path)
+
+    class FakeClashController:
+        def __init__(self, cfg):
+            pass
+
+        def get_connections(self):
+            return [
+                {
+                    "metadata": {
+                        "host": "github.com",
+                        "destinationIP": "140.82.112.3",
+                        "destinationPort": "443",
+                    },
+                    "chains": ["US-1"],
+                }
+            ]
+
+    def fake_lookup(target, server, authoritative, use_doh):
+        return [
+            whois.LookupResult(target=target, ip=target, operator="Microsoft Azure", country="US")
+        ]
+
+    monkeypatch.setattr(cli, "ClashController", FakeClashController)
+    monkeypatch.setattr(whois, "lookup", fake_lookup)
+
+    assert cli.cmd_connections(["--config", str(config), "--whois"]) == 0
+    out = capsys.readouterr().out
+    assert "OPERATOR" in out
+    assert "140.82.112.3" in out  # destination IP surfaced in its own column
+    assert "Microsoft Azure (US)" in out
+
+
+def test_cmd_connections_whois_resolves_proxied_domain(tmp_path, monkeypatch, capsys):
+    # Proxied connections come back from Clash with no destination IP — the
+    # operator must be resolved from the host domain instead.
+    config = _connections_config(tmp_path)
+
+    class FakeClashController:
+        def __init__(self, cfg):
+            pass
+
+        def get_connections(self):
+            return [
+                {
+                    "metadata": {"host": "api.anthropic.com", "destinationIP": ""},
+                    "chains": ["JP-1"],
+                }
+            ]
+
+    seen = {}
+
+    def fake_lookup(target, server, authoritative, use_doh):
+        seen["target"] = target
+        return [
+            whois.LookupResult(
+                target=target, ip="160.79.104.10", operator="Cloudflare", country="US"
+            )
+        ]
+
+    monkeypatch.setattr(cli, "ClashController", FakeClashController)
+    monkeypatch.setattr(whois, "lookup", fake_lookup)
+
+    assert cli.cmd_connections(["--config", str(config), "--whois"]) == 0
+    out = capsys.readouterr().out
+    assert seen["target"] == "api.anthropic.com"  # resolved by domain, not by IP
+    assert "160.79.104.10" in out  # the resolved IP is shown
+    assert "Cloudflare (US)" in out

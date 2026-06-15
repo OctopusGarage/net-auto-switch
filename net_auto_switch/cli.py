@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 
-from .clash import ClashController
+from .clash import ClashController, aggregate_connections, summarize_connections
 from .config import ClashConfig, ConfigError, load_config
 from .orchestrator import Orchestrator
 from .setup import (
@@ -669,6 +669,125 @@ def cmd_whois(argv):
     return 0
 
 
+def _connection_target(row):
+    """The thing to whois for a row: the destination IP when Clash gives one
+    (DIRECT connections), else the host domain — proxied connections come back
+    with no IP (the proxy resolves it), so we resolve the domain ourselves."""
+    return row.dest_ip or row.host
+
+
+def _enrich_targets(targets):
+    """Resolve + label each target concurrently, reusing the whois machinery.
+    A target is a destination IP (whois'd directly) or a domain (DoH-resolved
+    then whois'd). Returns {target: (resolved_ip, "Operator (CC)")}."""
+    from . import whois
+
+    out = {}
+    targets = [t for t in targets if t]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(targets) or 1)) as executor:
+        future_to_target = {
+            executor.submit(whois.lookup, t, "1.1.1.1", False, True): t for t in targets
+        }
+        for future in concurrent.futures.as_completed(future_to_target):
+            target = future_to_target[future]
+            try:
+                results = future.result()
+                if results:
+                    res = results[0]
+                    out[target] = (res.ip, whois.format_operator(res.operator, res.country))
+                else:
+                    out[target] = ("", "")
+            except Exception:  # noqa: BLE001 - a bad lookup just leaves the cells blank
+                out[target] = ("", "")
+    return out
+
+
+def _print_connections(rows, enrich=None, total=None, aggregated=False):
+    if aggregated and total is not None:
+        print(f"活动连接: {total} → {len(rows)} 组 (host+node)")
+    else:
+        print(f"活动连接: {len(rows)}")
+    if not rows:
+        return
+    info = enrich or {}
+
+    # (header, value-getter) for each column, built to match the active options.
+    cols = [("HOST", lambda r: r.host), ("NODE", lambda r: r.node)]
+    if enrich is not None:
+        cols.append(("IP", lambda r: info.get(_connection_target(r), ("", ""))[0]))
+        cols.append(("OPERATOR", lambda r: info.get(_connection_target(r), ("", ""))[1]))
+    if aggregated:
+        cols.append(("CONNS", lambda r: str(r.count)))
+    cols.append(("RULE", lambda r: r.rule))
+
+    # Pad every column except the last (RULE) to its widest value.
+    widths = [max([len(get(r)) for r in rows] + [len(head)]) for head, get in cols[:-1]]
+
+    def render(values):
+        padded = [f"{v:<{w}}" for v, w in zip(values[:-1], widths, strict=True)]
+        padded.append(values[-1])
+        print("  ".join(padded))
+
+    render([head for head, _ in cols])
+    for row in rows:
+        render([get(row) for _, get in cols])
+
+
+def cmd_connections(argv):
+    """List the current Clash active connections (host/SNI → outbound node)."""
+    p = argparse.ArgumentParser(
+        prog="net-auto-switch connections",
+        description="列出当前 Clash 活动连接 (域名/SNI → 出口节点)",
+    )
+    p.add_argument("--config", default=None, help="Path to config.toml")
+    p.add_argument(
+        "--whois",
+        action="store_true",
+        help="标注目标的 IP / 运营商 / 国家 (有 IP 用 IP, 走代理的按域名 DoH 解析; 较慢)",
+    )
+    p.add_argument(
+        "--raw",
+        action="store_true",
+        help="逐条列出 (默认按 host+node 聚合并显示连接数)",
+    )
+    p.add_argument(
+        "-w",
+        "--watch",
+        nargs="?",
+        const=2.0,
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="实时刷新 (默认每 2 秒), Ctrl-C 退出",
+    )
+    args = p.parse_args(argv)
+
+    try:
+        clash_cfg = _resolve_whois_clash_config(args.config)
+    except ConfigError as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 1
+    controller = ClashController(clash_cfg)
+
+    def snapshot():
+        raw_rows = summarize_connections(controller.get_connections())
+        rows = raw_rows if args.raw else aggregate_connections(raw_rows)
+        enrich = _enrich_targets({_connection_target(r) for r in rows}) if args.whois else None
+        _print_connections(rows, enrich, total=len(raw_rows), aggregated=not args.raw)
+
+    if args.watch is None:
+        snapshot()
+        return 0
+
+    try:
+        while True:
+            print("\033[2J\033[H", end="")  # clear screen, cursor home
+            snapshot()
+            time.sleep(args.watch)
+    except KeyboardInterrupt:
+        return 0
+
+
 def cmd_service(argv):
     """Install/uninstall/check the background service using the platform-native
     mechanism (launchd on macOS, systemd --user on Linux, Task Scheduler on Windows)."""
@@ -714,6 +833,8 @@ def main(argv=None):
         sys.exit(cmd_update(argv[1:]))
     if argv and argv[0] == "whois":
         sys.exit(cmd_whois(argv[1:]))
+    if argv and argv[0] == "connections":
+        sys.exit(cmd_connections(argv[1:]))
     if argv and argv[0] == "service":
         sys.exit(cmd_service(argv[1:]))
 

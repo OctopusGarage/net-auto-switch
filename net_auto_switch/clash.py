@@ -4,12 +4,95 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 
 import requests
 
 log = logging.getLogger("net_auto_switch.clash")
 
 DEAD = 9999
+
+
+@dataclass(frozen=True)
+class ConnectionRow:
+    """One row of `get_connections()`, reduced to what a human cares about:
+    which host is being reached, through which outbound node, by which rule."""
+
+    host: str  # domain / SNI; falls back to the destination IP when absent
+    dest_ip: str
+    dest_port: str
+    node: str  # the actual outbound node (chains[0]); "?" when unknown
+    rule: str  # rule, with payload appended as "rule(payload)"
+    network: str
+
+
+def summarize_connections(connections):
+    """Pure transform of the Clash `/connections` list into sorted ConnectionRows.
+    I/O-free so it stays unit-testable; the CLI does the HTTP + printing."""
+    rows = []
+    for conn in connections:
+        md = conn.get("metadata") or {}
+        dest_ip = md.get("destinationIP") or ""
+        host = md.get("host") or md.get("sniffHost") or dest_ip
+        chains = conn.get("chains") or []
+        node = chains[0] if chains else "?"
+        rule = conn.get("rule") or ""
+        payload = conn.get("rulePayload") or ""
+        if payload:
+            rule = f"{rule}({payload})" if rule else payload
+        rows.append(
+            ConnectionRow(
+                host=host,
+                dest_ip=dest_ip,
+                dest_port=md.get("destinationPort") or "",
+                node=node,
+                rule=rule,
+                network=(md.get("network") or "").lower(),
+            )
+        )
+    rows.sort(key=lambda r: (r.host, r.node))
+    return rows
+
+
+@dataclass(frozen=True)
+class ConnectionGroup:
+    """Per-connection rows folded by (host, node), with a count of how many
+    connections share that pair."""
+
+    host: str
+    node: str
+    count: int
+    dest_ip: str
+    rule: str
+    network: str
+
+
+def aggregate_connections(rows):
+    """Fold ConnectionRows by (host, node), counting duplicates. Keeps the first
+    non-empty destination IP / rule seen. Sorted by host then node, matching the
+    per-connection view."""
+    acc = {}
+    for r in rows:
+        key = (r.host, r.node)
+        a = acc.setdefault(key, {"count": 0, "dest_ip": "", "rule": "", "network": r.network})
+        a["count"] += 1
+        if not a["dest_ip"]:
+            a["dest_ip"] = r.dest_ip
+        if not a["rule"]:
+            a["rule"] = r.rule
+    groups = [
+        ConnectionGroup(
+            host=host,
+            node=node,
+            count=a["count"],
+            dest_ip=a["dest_ip"],
+            rule=a["rule"],
+            network=a["network"],
+        )
+        for (host, node), a in acc.items()
+    ]
+    groups.sort(key=lambda g: (g.host, g.node))
+    return groups
 
 
 class ClashController:
