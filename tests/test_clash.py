@@ -147,7 +147,8 @@ def test_run_cycle_notifies_on_switch_when_enabled():
         mock.patch.object(c, "get_proxies", return_value=proxies),
         mock.patch.object(c, "get_mode", return_value="global"),
         mock.patch.object(
-            c, "test_all_delays",
+            c,
+            "test_all_delays",
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "switch_proxy"),
@@ -171,7 +172,8 @@ def test_run_cycle_does_not_notify_when_disabled():
         mock.patch.object(c, "get_proxies", return_value=proxies),
         mock.patch.object(c, "get_mode", return_value="global"),
         mock.patch.object(
-            c, "test_all_delays",
+            c,
+            "test_all_delays",
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "switch_proxy"),
@@ -217,7 +219,8 @@ def test_run_cycle_dry_run_does_not_probe_exit_operator():
         mock.patch.object(c, "get_proxies", return_value=proxies),
         mock.patch.object(c, "get_mode", return_value="global"),
         mock.patch.object(
-            c, "test_all_delays",
+            c,
+            "test_all_delays",
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "get_exit_operator") as op,

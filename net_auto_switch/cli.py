@@ -330,10 +330,19 @@ def cmd_whois(argv):
         description="解析域名/IP 对应的运营商",
     )
     p.add_argument("-s", "--server", default="1.1.1.1", help="指定 DNS 服务器 (默认 1.1.1.1)")
-    p.add_argument("-a", "--authoritative", action="store_true",
-                   help="查询域名的权威 NS, 再向该 NS 直接发起 A 查询 (隐含 --no-doh)")
-    p.add_argument("--no-doh", dest="doh", action="store_false", default=True,
-                   help="改用系统 DNS 解析 (默认走 Cloudflare DoH 绕开 TUN 模式劫持)")
+    p.add_argument(
+        "-a",
+        "--authoritative",
+        action="store_true",
+        help="查询域名的权威 NS, 再向该 NS 直接发起 A 查询 (隐含 --no-doh)",
+    )
+    p.add_argument(
+        "--no-doh",
+        dest="doh",
+        action="store_false",
+        default=True,
+        help="改用系统 DNS 解析 (默认走 Cloudflare DoH 绕开 TUN 模式劫持)",
+    )
     p.add_argument("targets", nargs="+", help="域名或 IP")
     args = p.parse_args(argv)
 

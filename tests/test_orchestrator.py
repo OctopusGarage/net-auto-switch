@@ -56,8 +56,10 @@ def test_maybe_wifi_notifies_on_switch():
 
 
 def test_maybe_wifi_does_not_notify_on_dry_run():
-    cfg = Config(wifi=WifiConfig(enabled=True, switch_cooldown=0, min_improvement_ms=50),
-                 clash=ClashConfig(secret="x"))
+    cfg = Config(
+        wifi=WifiConfig(enabled=True, switch_cooldown=0, min_improvement_ms=50),
+        clash=ClashConfig(secret="x"),
+    )
     o = Orchestrator(cfg, dry_run=True)
     with (
         mock.patch("net_auto_switch.orchestrator.wifi_mod") as w,

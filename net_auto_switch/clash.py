@@ -355,8 +355,9 @@ end tell
                 if self.notify:
                     from . import notify
 
-                    notify.send("🔀 代理节点已切换", target,
-                                f"出口: {operator}" if operator else "")
+                    notify.send(
+                        "🔀 代理节点已切换", target, f"出口: {operator}" if operator else ""
+                    )
             else:
                 log.error("Switch failed")
         else:

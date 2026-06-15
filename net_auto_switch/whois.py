@@ -54,8 +54,15 @@ REGIONAL_WHOIS = {
 }
 
 REGISTRY_NOISE = (
-    "iana", "apnic", "ripe", "arin", "lacnic", "afrinic",
-    "administered by", "not allocated", "reserved",
+    "iana",
+    "apnic",
+    "ripe",
+    "arin",
+    "lacnic",
+    "afrinic",
+    "administered by",
+    "not allocated",
+    "reserved",
 )
 
 FALLBACK_KEYS = ("org-name", "organisation", "owner", "netname", "descr")
@@ -70,10 +77,16 @@ def is_ip(s: str) -> bool:
 
 
 def dig(args: list[str]) -> list[str]:
-    out = subprocess.run(
-        ["dig", *args],
-        capture_output=True, text=True, timeout=15,
-    ).stdout.strip().splitlines()
+    out = (
+        subprocess.run(
+            ["dig", *args],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        .stdout.strip()
+        .splitlines()
+    )
     return [line.strip().rstrip(".") for line in out if line.strip()]
 
 
@@ -93,7 +106,8 @@ def doh_query(domain: str, qtype: str = "A") -> list[str]:
     url = f"https://1.1.1.1/dns-query?name={domain}&type={qtype}"
     proc = subprocess.run(
         ["curl", "-s", "--max-time", "10", "-H", "accept: application/dns-json", url],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     try:
         data = json.loads(proc.stdout)
@@ -146,10 +160,12 @@ def whois_query(ip: str) -> str:
         if host in low and host not in raw.split():
             continue  # already queried inline
         # 触发条件: refer/whois 行指向该 RIR, 或文本提示 transferred
-        if (f"refer:        {host}" in raw
-                or f"whois:        {host}" in raw
-                or f"transferred to {key} ncc" in low
-                or f"transferred to {key}" in low):
+        if (
+            f"refer:        {host}" in raw
+            or f"whois:        {host}" in raw
+            or f"transferred to {key} ncc" in low
+            or f"transferred to {key}" in low
+        ):
             extra_hosts.append(host)
 
     seen = set()

@@ -23,7 +23,7 @@ def test_send_omits_subtitle_when_empty():
 def test_send_escapes_quotes():
     with mock.patch("net_auto_switch.notify.subprocess.run") as run:
         notify.send("T", 'a "quoted" node')
-    assert r'a \"quoted\" node' in run.call_args[0][0][2]
+    assert r"a \"quoted\" node" in run.call_args[0][0][2]
 
 
 def test_send_swallows_errors():
