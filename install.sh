@@ -67,6 +67,15 @@ curl -fsSL "$asset" -o "$tmp/release.tar.gz" \
 # Migrate a previous git-clone install: drop its VCS metadata, keep .venv/config.toml.
 [ -d "$INSTALL_DIR/.git" ] && rm -rf "$INSTALL_DIR/.git"
 mkdir -p "$INSTALL_DIR"
+# Clean stale files from a previous (possibly bloated) install so anything dropped
+# between versions doesn't linger; preserve user config, the venv, and logs. Guarded
+# so we only ever prune something that already looks like an install.
+if [ -d "$INSTALL_DIR/net_auto_switch" ] || [ -f "$INSTALL_DIR/pyproject.toml" ]; then
+  find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name config.toml ! -name config.toml.bak ! -name .venv \
+    ! -name logs ! -name .net-auto-switch.pid \
+    -exec rm -rf {} +
+fi
 tar -xzf "$tmp/release.tar.gz" --strip-components=1 -C "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 

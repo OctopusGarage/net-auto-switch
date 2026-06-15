@@ -85,12 +85,41 @@ def _resolve_latest_tag():
         return None
 
 
+# Runtime state preserved across an update; everything else is replaced by the
+# extracted release, so files dropped between versions don't linger.
+_PRESERVE_ON_UPDATE = {"config.toml", "config.toml.bak", ".venv", "logs", ".net-auto-switch.pid"}
+
+
+def _prune_for_clean_extract(dest):
+    """Remove stale files from `dest` before extracting a new release.
+
+    Preserves runtime state (config, venv, logs). No-op on a dev checkout (has
+    `.git`) or anything that doesn't already look like an install, so it can't
+    nuke a source tree or an unrelated directory."""
+    if not os.path.isdir(dest) or os.path.exists(os.path.join(dest, ".git")):
+        return
+    looks_like_install = os.path.isdir(os.path.join(dest, "net_auto_switch")) or os.path.exists(
+        os.path.join(dest, "pyproject.toml")
+    )
+    if not looks_like_install:
+        return
+    for name in os.listdir(dest):
+        if name in _PRESERVE_ON_UPDATE:
+            continue
+        path = os.path.join(dest, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            os.remove(path)
+
+
 def _download_release(tag, dest):
     """Download the release tarball for `tag` and extract it over `dest`.
 
     Prefers the curated lean asset (`net-auto-switch-<tag>.tar.gz`) and falls back
-    to the full source archive for older releases that predate it. config.toml is
-    gitignored / not in either archive, so it's left untouched."""
+    to the full source archive for older releases that predate it. Stale files are
+    pruned first (preserving config + venv + logs) so nothing dropped between
+    versions lingers; config.toml is preserved and not in either archive."""
     asset = f"https://github.com/{REPO}/releases/download/{tag}/net-auto-switch-{tag}.tar.gz"
     source = f"https://github.com/{REPO}/archive/refs/tags/{tag}.tar.gz"
     tmp = tempfile.mkdtemp()
@@ -102,6 +131,7 @@ def _download_release(tag, dest):
         if not ok:
             return False
         os.makedirs(dest, exist_ok=True)
+        _prune_for_clean_extract(dest)
         extract = ["tar", "-xzf", tarball, "--strip-components=1", "-C", dest]
         return subprocess.run(extract).returncode == 0
     finally:

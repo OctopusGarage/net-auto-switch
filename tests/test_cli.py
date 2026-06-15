@@ -5,6 +5,47 @@ import pytest
 from net_auto_switch import cli
 
 
+def _make_install(tmp_path, *, git=False, like_install=True):
+    (tmp_path / "config.toml").write_text("secret")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "tests").mkdir()  # stale dev dir from a bloated install
+    (tmp_path / "SECURITY.md").write_text("x")  # stale dev file
+    if like_install:
+        (tmp_path / "pyproject.toml").write_text("x")
+        (tmp_path / "net_auto_switch").mkdir()
+    if git:
+        (tmp_path / ".git").mkdir()
+    return tmp_path
+
+
+def test_prune_removes_stale_preserves_runtime(tmp_path):
+    d = _make_install(tmp_path)
+    cli._prune_for_clean_extract(str(d))
+    # runtime state preserved
+    assert (d / "config.toml").exists()
+    assert (d / ".venv").is_dir()
+    assert (d / "logs").is_dir()
+    # stale dev files gone
+    assert not (d / "tests").exists()
+    assert not (d / "SECURITY.md").exists()
+    # the package dir itself is replaced by the extract, so it's pruned too
+    assert not (d / "net_auto_switch").exists()
+
+
+def test_prune_skips_dev_checkout(tmp_path):
+    d = _make_install(tmp_path, git=True)
+    cli._prune_for_clean_extract(str(d))
+    assert (d / "tests").exists()  # untouched — has .git
+    assert (d / "SECURITY.md").exists()
+
+
+def test_prune_skips_non_install_dir(tmp_path):
+    d = _make_install(tmp_path, like_install=False)
+    cli._prune_for_clean_extract(str(d))
+    assert (d / "tests").exists()  # untouched — doesn't look like an install
+
+
 def test_main_once_calls_run_once():
     fake_cfg = mock.Mock()
     with (
