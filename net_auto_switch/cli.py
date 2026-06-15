@@ -47,6 +47,20 @@ INSTALL_LAUNCHD = os.path.join(PROJECT_DIR, "scripts", "install-launchd.sh")
 REPO = "OctopusGarage/net-auto-switch"
 
 
+class WhoisProfileError(Exception):
+    pass
+
+
+_CLASH_GROUP_TYPES = {"Selector", "URLTest", "Fallback", "LoadBalance", "Relay"}
+_CLASH_NON_NODE_TYPES = _CLASH_GROUP_TYPES | {
+    "Compatible",
+    "Direct",
+    "Pass",
+    "Reject",
+    "RejectDrop",
+}
+
+
 def _tag_from_release_url(url):
     """'.../releases/tag/v0.3.3' (optionally trailing /) -> 'v0.3.3'."""
     return url.rstrip("/").rsplit("/", 1)[-1]
@@ -377,6 +391,221 @@ def cmd_update(argv):
     return 0
 
 
+def _read_yaml_mapping(path):
+    import yaml
+
+    with open(os.path.expanduser(path), encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _profile_file_candidates(profiles_yaml, profile):
+    base = os.path.dirname(os.path.expanduser(profiles_yaml))
+    names = []
+    for key in ("file", "path", "name"):
+        value = profile.get(key)
+        if isinstance(value, str) and value.strip():
+            names.append(value.strip())
+    uid = profile.get("uid")
+    if isinstance(uid, str) and uid.strip():
+        names.append(f"{uid.strip()}.yaml")
+
+    candidates = []
+    seen = set()
+    for name in names:
+        if not name.endswith((".yaml", ".yml")):
+            continue
+        paths = (
+            [name]
+            if os.path.isabs(name)
+            else [os.path.join(base, name), os.path.join(base, "profiles", name)]
+        )
+        for path in paths:
+            expanded = os.path.expanduser(path)
+            if expanded not in seen:
+                seen.add(expanded)
+                candidates.append(expanded)
+    return candidates
+
+
+def _load_current_profile_nodes(profiles_yaml):
+    profiles_path = os.path.expanduser(profiles_yaml)
+    try:
+        data = _read_yaml_mapping(profiles_path)
+    except Exception as e:
+        raise WhoisProfileError(f"Failed to read profiles.yaml: {e}") from e
+
+    current_uid = data.get("current")
+    items = data.get("items") or []
+    if not isinstance(items, list):
+        raise WhoisProfileError("profiles.yaml has no valid items list")
+    profile = next((p for p in items if isinstance(p, dict) and p.get("uid") == current_uid), None)
+    if profile is None:
+        raise WhoisProfileError(f"Current profile not found in profiles.yaml: {current_uid}")
+
+    profile_data = {}
+    if isinstance(profile.get("proxies"), list):
+        profile_data = profile
+    else:
+        for candidate in _profile_file_candidates(profiles_path, profile):
+            if not os.path.exists(candidate):
+                continue
+            try:
+                profile_data = _read_yaml_mapping(candidate)
+            except Exception:
+                continue
+            if isinstance(profile_data.get("proxies"), list):
+                break
+
+    proxies = profile_data.get("proxies") or []
+    if not isinstance(proxies, list):
+        proxies = []
+
+    nodes = []
+    for proxy in proxies:
+        if not isinstance(proxy, dict):
+            continue
+        server = str(proxy.get("server") or "").strip()
+        if not server:
+            continue
+        name = str(proxy.get("name") or server).strip()
+        nodes.append({"name": name, "server": server})
+
+    if not nodes:
+        raise WhoisProfileError(f"No proxy server entries found for current profile: {current_uid}")
+
+    profile_name = profile.get("name") or current_uid or profile.get("file") or "?"
+    return {"uid": current_uid or "?", "name": profile_name, "nodes": nodes}
+
+
+def _is_clash_proxy_node(data):
+    proxy_type = str(data.get("type") or "")
+    return bool(proxy_type) and proxy_type not in _CLASH_NON_NODE_TYPES and "all" not in data
+
+
+def _load_clash_api_nodes(clash_cfg):
+    try:
+        proxies = ClashController(clash_cfg).get_proxies()
+    except Exception as e:
+        raise WhoisProfileError(f"Failed to read Clash API proxies: {e}") from e
+
+    nodes = []
+    for name, data in proxies.items():
+        if not isinstance(data, dict) or not _is_clash_proxy_node(data):
+            continue
+        node_name = str(data.get("name") or name).strip()
+        server = str(data.get("server") or "").strip()
+        if node_name:
+            nodes.append({"name": node_name, "server": server})
+
+    if not nodes:
+        raise WhoisProfileError("No proxy nodes found from Clash API")
+    return nodes
+
+
+def _load_clash_api_profile(clash_cfg):
+    api_nodes = _load_clash_api_nodes(clash_cfg)
+    try:
+        profile = _load_current_profile_nodes(clash_cfg.profiles_yaml)
+    except WhoisProfileError:
+        profile = {"uid": "Clash API", "name": "Clash API", "nodes": []}
+
+    server_by_name = {node["name"]: node["server"] for node in profile["nodes"]}
+    nodes = []
+    for node in api_nodes:
+        server = node["server"] or server_by_name.get(node["name"], "")
+        if server:
+            nodes.append({"name": node["name"], "server": server})
+
+    if not nodes:
+        raise WhoisProfileError(
+            "Clash API returned proxy nodes but did not expose their server endpoints"
+        )
+    return {"uid": profile["uid"], "name": profile["name"], "nodes": nodes}
+
+
+def _unique_servers(nodes):
+    servers = []
+    seen = set()
+    for node in nodes:
+        server = node["server"]
+        if server in seen:
+            continue
+        seen.add(server)
+        servers.append(server)
+    return servers
+
+
+def _print_clash_profile_whois(profile, lookup_by_server):
+    from . import whois
+
+    nodes = profile["nodes"]
+    name_width = max([len(n["name"]) for n in nodes] + [4])
+    server_width = max([len(n["server"]) for n in nodes] + [6])
+    ips = [result.ip for results in lookup_by_server.values() for result in results]
+    ip_width = max([len(ip) for ip in ips] + [2, 15])
+
+    print(f"=== [{profile['name']}] uid={profile['uid']}  节点数: {len(nodes)} <- current ===")
+    for node in nodes:
+        results = lookup_by_server.get(node["server"]) or []
+        if not results:
+            print(
+                f"{node['name']:<{name_width}}  "
+                f"{node['server']:<{server_width}}  "
+                f"{'解析失败':<{ip_width}}  解析失败"
+            )
+            continue
+        for index, result in enumerate(results):
+            node_name = node["name"] if index == 0 else ""
+            server = node["server"] if index == 0 else ""
+            operator = whois.format_operator(result.operator, result.country)
+            print(
+                f"{node_name:<{name_width}}  "
+                f"{server:<{server_width}}  "
+                f"{result.ip:<{ip_width}}  "
+                f"{operator}"
+            )
+
+
+def _cmd_whois_current_clash_profile(args, use_doh):
+    from . import whois
+
+    try:
+        clash_cfg = _resolve_whois_clash_config(args.config)
+        profile = _load_clash_api_profile(clash_cfg)
+    except (ConfigError, WhoisProfileError) as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 1
+
+    servers = _unique_servers(profile["nodes"])
+    print(f"待解析 server 数 (去重后): {len(servers)}\n")
+
+    lookup_by_server = {}
+    for server in servers:
+        lookup_by_server[server] = whois.lookup(server, args.server, args.authoritative, use_doh)
+    _print_clash_profile_whois(profile, lookup_by_server)
+    return 0
+
+
+def _resolve_whois_clash_config(config_path):
+    try:
+        return load_config(config_path).clash
+    except ConfigError:
+        if config_path:
+            raise
+        detected = detect_clash_verge()
+        if detected:
+            return ClashConfig(
+                api=detected.api,
+                secret=detected.secret,
+                proxy_port=detected.proxy_port,
+                profiles_yaml=detected.profiles_yaml,
+            )
+        raise
+
+
 def cmd_whois(argv):
     """Resolve a domain / IP to its operator or cloud provider."""
     from . import whois
@@ -399,12 +628,23 @@ def cmd_whois(argv):
         default=True,
         help="改用系统 DNS 解析 (默认走 Cloudflare DoH 绕开 TUN 模式劫持)",
     )
-    p.add_argument("targets", nargs="+", help="域名或 IP")
+    p.add_argument(
+        "--config",
+        default=None,
+        help="Path to config.toml (仅在不传 target、扫描 Clash 节点时使用)",
+    )
+    p.add_argument(
+        "targets",
+        nargs="*",
+        help="域名或 IP；不传则查询当前 Clash profile 的节点 server",
+    )
     args = p.parse_args(argv)
 
     # DoH is HTTPS-based; -a relies on plaintext DNS to a specific NS, so the two
     # are mutually exclusive. Asking for -a implicitly turns DoH off.
     use_doh = args.doh and not args.authoritative
+    if not args.targets:
+        return _cmd_whois_current_clash_profile(args, use_doh)
     for target in args.targets:
         whois.analyze(target.strip(), args.server, args.authoritative, use_doh)
     return 0

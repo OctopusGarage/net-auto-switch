@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from net_auto_switch import cli
+from net_auto_switch import cli, whois
 
 
 def _make_install(tmp_path, *, git=False, like_install=True):
@@ -252,6 +252,193 @@ def test_cmd_update_download_failure_returns_nonzero(monkeypatch):
 def test_cmd_update_unresolvable_latest_returns_nonzero(monkeypatch):
     monkeypatch.setattr(cli, "_resolve_latest_tag", lambda: None)
     assert cli.cmd_update([]) == 1
+
+
+def test_cmd_whois_targets_keep_standalone_lookup(monkeypatch):
+    calls = []
+
+    def fake_analyze(target, server, authoritative, use_doh):
+        calls.append((target, server, authoritative, use_doh))
+
+    monkeypatch.setattr(cli, "load_config", mock.Mock(side_effect=AssertionError))
+    monkeypatch.setattr(whois, "analyze", fake_analyze)
+
+    assert cli.cmd_whois(["example.com", "--no-doh"]) == 0
+
+    assert calls == [("example.com", "1.1.1.1", False, False)]
+
+
+def test_cmd_whois_without_targets_queries_clash_api_nodes(tmp_path, monkeypatch, capsys):
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    profiles_yaml = tmp_path / "profiles.yaml"
+    profiles_yaml.write_text(
+        """
+current: current-uid
+items:
+  - uid: current-uid
+    type: local
+    name: Current Profile
+    file: current-uid.yaml
+  - uid: other-uid
+    type: remote
+    name: Other Profile
+    file: other-uid.yaml
+""",
+        encoding="utf-8",
+    )
+    (profiles_dir / "current-uid.yaml").write_text(
+        """
+proxies:
+  - name: Node A
+    type: vmess
+    server: a.example.com
+  - name: Node B
+    type: trojan
+    server: a.example.com
+  - name: Node C
+    type: ss
+    server: 203.0.113.10
+  - name: Profile Only Node
+    type: ss
+    server: profile-only.example.com
+  - name: Broken Node
+    type: ss
+""",
+        encoding="utf-8",
+    )
+
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f"""
+[clash]
+secret = "abc"
+profiles_yaml = "{profiles_yaml}"
+""",
+        encoding="utf-8",
+    )
+
+    calls = []
+    controller_cfgs = []
+
+    class FakeClashController:
+        def __init__(self, cfg):
+            controller_cfgs.append(cfg)
+
+        def get_proxies(self):
+            return {
+                "Proxy": {"type": "Selector", "all": ["Node A", "Node B", "Node C"]},
+                "Node A": {"type": "Vmess"},
+                "Node B": {"type": "Trojan"},
+                "Node C": {"type": "Shadowsocks"},
+                "DIRECT": {"type": "Direct"},
+            }
+
+    def fake_lookup(target, server, authoritative, use_doh):
+        calls.append((target, server, authoritative, use_doh))
+        return [
+            whois.LookupResult(
+                target=target,
+                ip="198.51.100.7" if target == "a.example.com" else target,
+                operator="Cloudflare",
+                country="US",
+            )
+        ]
+
+    monkeypatch.setattr(cli, "ClashController", FakeClashController)
+    monkeypatch.setattr(whois, "lookup", fake_lookup)
+
+    assert cli.cmd_whois(["--config", str(config)]) == 0
+
+    assert controller_cfgs
+    assert controller_cfgs[0].api == "http://127.0.0.1:9097"
+    assert controller_cfgs[0].profiles_yaml == str(profiles_yaml)
+    assert calls == [
+        ("a.example.com", "1.1.1.1", False, True),
+        ("203.0.113.10", "1.1.1.1", False, True),
+    ]
+    out = capsys.readouterr().out
+    assert "待解析 server 数 (去重后): 2" in out
+    assert "=== [Current Profile] uid=current-uid  节点数: 3 <- current ===" in out
+    assert "Node A" in out
+    assert "Node B" in out
+    assert "Node C" in out
+    assert "Profile Only Node" not in out
+    assert "a.example.com" in out
+    assert "203.0.113.10" in out
+    assert "198.51.100.7" in out
+    assert "Cloudflare (US)" in out
+
+
+def test_cmd_whois_without_config_falls_back_to_detected_clash_verge(tmp_path, monkeypatch, capsys):
+    from net_auto_switch.config import ConfigError
+    from net_auto_switch.setup import DetectedClash
+
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    profiles_yaml = tmp_path / "profiles.yaml"
+    profiles_yaml.write_text(
+        """
+current: current-uid
+items:
+  - uid: current-uid
+    type: remote
+    name: Current Profile
+    file: current-uid.yaml
+""",
+        encoding="utf-8",
+    )
+    (profiles_dir / "current-uid.yaml").write_text(
+        """
+proxies:
+  - name: Node A
+    type: vmess
+    server: a.example.com
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "load_config", mock.Mock(side_effect=ConfigError("no config")))
+    monkeypatch.setattr(
+        cli,
+        "detect_clash_verge",
+        lambda: DetectedClash(
+            api="http://127.0.0.1:9097",
+            secret="",
+            proxy_port=7890,
+            profiles_yaml=str(profiles_yaml),
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "ClashController",
+        lambda cfg: mock.Mock(
+            get_proxies=lambda: {
+                "Proxy": {"type": "Selector", "all": ["Node A"]},
+                "Node A": {"type": "Vmess"},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        whois,
+        "lookup",
+        lambda target, server, authoritative, use_doh: [
+            whois.LookupResult(
+                target=target,
+                ip="198.51.100.7",
+                operator="Cloudflare",
+                country="US",
+            )
+        ],
+    )
+
+    assert cli.cmd_whois([]) == 0
+
+    out = capsys.readouterr().out
+    assert "待解析 server 数 (去重后): 1" in out
+    assert "Node A" in out
+    assert "a.example.com" in out
+    assert "Cloudflare (US)" in out
 
 
 def test_setup_logging_uses_daily_rotation(tmp_path, monkeypatch):

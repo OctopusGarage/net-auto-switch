@@ -11,6 +11,7 @@ import json
 import random
 import subprocess
 import time
+from dataclasses import dataclass
 
 OPERATOR_HINTS = [
     ("tencent.com", "腾讯云 Tencent Cloud"),
@@ -66,6 +67,14 @@ REGISTRY_NOISE = (
 )
 
 FALLBACK_KEYS = ("org-name", "organisation", "owner", "netname", "descr")
+
+
+@dataclass(frozen=True)
+class LookupResult:
+    target: str
+    ip: str
+    operator: str
+    country: str = ""
 
 
 def is_ip(s: str) -> bool:
@@ -211,19 +220,33 @@ def guess_operator(raw: str) -> str:
     return "未知"
 
 
-def analyze(target: str, server: str, authoritative: bool, use_doh: bool) -> None:
+def format_operator(operator: str, country: str = "") -> str:
+    suffix = f" ({country})" if country and country.upper() not in ("ZZ", "EU") else ""
+    return f"{operator}{suffix}"
+
+
+def lookup(target: str, server: str, authoritative: bool, use_doh: bool) -> list[LookupResult]:
     if is_ip(target):
         ips = [target]
     else:
         ips, _ = resolve(target, server, authoritative, use_doh)
         if not ips:
-            print(f"{target}\t解析失败")
-            return
+            return []
 
+    results = []
     for ip in ips:
         raw = whois_query(ip)
         operator = guess_operator(raw) if raw.strip() else "whois 无返回"
         country = extract_field(raw, "country") or ""
-        suffix = f" ({country})" if country and country.upper() not in ("ZZ", "EU") else ""
-        label = ip if is_ip(target) else f"{target} → {ip}"
-        print(f"{label}\t{operator}{suffix}")
+        results.append(LookupResult(target=target, ip=ip, operator=operator, country=country))
+    return results
+
+
+def analyze(target: str, server: str, authoritative: bool, use_doh: bool) -> None:
+    results = lookup(target, server, authoritative, use_doh)
+    if not results:
+        print(f"{target}\t解析失败")
+        return
+    for result in results:
+        label = result.ip if is_ip(target) else f"{target} → {result.ip}"
+        print(f"{label}\t{format_operator(result.operator, result.country)}")
