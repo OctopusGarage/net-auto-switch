@@ -1,5 +1,6 @@
 # net-auto-switch
 
+[![Release](https://img.shields.io/github/v/release/OctopusGarage/net-auto-switch)](https://github.com/OctopusGarage/net-auto-switch/releases/latest)
 [![CI](https://github.com/OctopusGarage/net-auto-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/OctopusGarage/net-auto-switch/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](.python-version)

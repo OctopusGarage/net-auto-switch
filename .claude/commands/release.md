@@ -61,24 +61,28 @@ Arguments: `$ARGUMENTS`
    ```
 3. Verify: `gh release list -L 3` shows `vX.Y.Z` as **Latest**, and
    `git ls-remote --tags origin vX.Y.Z` resolves.
-4. Self-consistency check (matters because install/update pull the *latest release's*
-   tarball — ADR-0011): confirm the new tag's tarball carries the code you just shipped,
-   e.g. download `https://github.com/OctopusGarage/net-auto-switch/archive/refs/tags/vX.Y.Z.tar.gz`
-   and spot-check a changed file.
+4. The `release.yml` workflow (triggered by the tag push) builds and attaches the
+   curated lean asset `net-auto-switch-vX.Y.Z.tar.gz` (+ `.sha256sum`) — ADR-0014.
+   Wait for it, then confirm: `gh release view vX.Y.Z --json assets`.
+5. Self-consistency check (matters because install/update pull the *latest release's*
+   asset — ADR-0014, falling back to the source archive): download
+   `https://github.com/OctopusGarage/net-auto-switch/releases/download/vX.Y.Z/net-auto-switch-vX.Y.Z.tar.gz`
+   and spot-check a changed file + that it's lean (no `tests/`, `.github/`).
 
 ## Phase 4 — Redeploy this machine (skip if `no-deploy`; macOS only)
 
 The daemon runs in place from `~/.net-auto-switch` (override `NET_AUTO_SWITCH_DIR`).
-Migrate it to the new release via the tarball mechanism (ADR-0011), preserving
+Migrate it to the new release via the tarball mechanism (ADR-0014), preserving
 `config.toml` (gitignored → not in the archive) and `.venv`:
 
-1. Resolve latest tag via the redirect, download its tarball, and extract over the
-   install dir, dropping any old `.git`:
+1. Resolve latest tag via the redirect, download its **asset** (fall back to the
+   source archive), and extract over the install dir, dropping any old `.git`:
    ```
    INSTALL_DIR="$HOME/.net-auto-switch"; REPO="OctopusGarage/net-auto-switch"
    url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")
    TAG="${url##*/}"; tmp="$(mktemp -d)"
-   curl -fsSL "https://github.com/$REPO/archive/refs/tags/${TAG}.tar.gz" -o "$tmp/r.tar.gz"
+   curl -fsSL "https://github.com/$REPO/releases/download/${TAG}/net-auto-switch-${TAG}.tar.gz" -o "$tmp/r.tar.gz" \
+     || curl -fsSL "https://github.com/$REPO/archive/refs/tags/${TAG}.tar.gz" -o "$tmp/r.tar.gz"
    [ -d "$INSTALL_DIR/.git" ] && rm -rf "$INSTALL_DIR/.git"
    tar -xzf "$tmp/r.tar.gz" --strip-components=1 -C "$INSTALL_DIR"; rm -rf "$tmp"
    (cd "$INSTALL_DIR" && uv sync)

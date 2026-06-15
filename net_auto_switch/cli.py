@@ -86,14 +86,20 @@ def _resolve_latest_tag():
 
 
 def _download_release(tag, dest):
-    """Download the (export-ignore filtered) source tarball for `tag` and extract
-    it over `dest`. config.toml is gitignored, so it's absent from the archive and
-    left untouched."""
-    url = f"https://github.com/{REPO}/archive/refs/tags/{tag}.tar.gz"
+    """Download the release tarball for `tag` and extract it over `dest`.
+
+    Prefers the curated lean asset (`net-auto-switch-<tag>.tar.gz`) and falls back
+    to the full source archive for older releases that predate it. config.toml is
+    gitignored / not in either archive, so it's left untouched."""
+    asset = f"https://github.com/{REPO}/releases/download/{tag}/net-auto-switch-{tag}.tar.gz"
+    source = f"https://github.com/{REPO}/archive/refs/tags/{tag}.tar.gz"
     tmp = tempfile.mkdtemp()
     try:
         tarball = os.path.join(tmp, "release.tar.gz")
-        if subprocess.run(["curl", "-fsSL", url, "-o", tarball]).returncode != 0:
+        ok = subprocess.run(["curl", "-fsSL", asset, "-o", tarball]).returncode == 0 or (
+            subprocess.run(["curl", "-fsSL", source, "-o", tarball]).returncode == 0
+        )
+        if not ok:
             return False
         os.makedirs(dest, exist_ok=True)
         extract = ["tar", "-xzf", tarball, "--strip-components=1", "-C", dest]
