@@ -50,15 +50,20 @@ case "$TAG" in
   *) err "Couldn't resolve a release tag (got '$TAG')."; exit 1 ;;
 esac
 
-# 3. download + extract the filtered release tarball into INSTALL_DIR.
-#    config.toml is gitignored, so it's absent from the archive and preserved.
+# 3. download + extract the release tarball into INSTALL_DIR.
+#    Prefer the curated lean asset; fall back to the full source archive for older
+#    releases that predate it. config.toml is gitignored / not in either archive,
+#    so it's preserved.
 info "Downloading $TAG..."
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL "https://github.com/$REPO/archive/refs/tags/${TAG}.tar.gz" -o "$tmp/release.tar.gz" || {
-  err "Download failed for $TAG."
-  exit 1
-}
+asset="https://github.com/$REPO/releases/download/${TAG}/net-auto-switch-${TAG}.tar.gz"
+source_archive="https://github.com/$REPO/archive/refs/tags/${TAG}.tar.gz"
+curl -fsSL "$asset" -o "$tmp/release.tar.gz" \
+  || curl -fsSL "$source_archive" -o "$tmp/release.tar.gz" || {
+    err "Download failed for $TAG."
+    exit 1
+  }
 # Migrate a previous git-clone install: drop its VCS metadata, keep .venv/config.toml.
 [ -d "$INSTALL_DIR/.git" ] && rm -rf "$INSTALL_DIR/.git"
 mkdir -p "$INSTALL_DIR"
