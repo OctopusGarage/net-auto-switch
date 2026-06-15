@@ -1,4 +1,5 @@
 import argparse
+import concurrent.futures
 import logging
 import logging.handlers
 import os
@@ -580,11 +581,29 @@ def _cmd_whois_current_clash_profile(args, use_doh):
         return 1
 
     servers = _unique_servers(profile["nodes"])
-    print(f"待解析 server 数 (去重后): {len(servers)}\n")
+    total = len(servers)
+    print(f"待解析 server 数 (去重后): {total}\n")
 
+    # Each lookup is network-bound (DoH + whois with retries) and slow; run them
+    # concurrently and report per-server progress to stderr so the table on stdout
+    # stays pipe-clean. Output ordering is unaffected — the table re-keys by server.
     lookup_by_server = {}
-    for server in servers:
-        lookup_by_server[server] = whois.lookup(server, args.server, args.authoritative, use_doh)
+    done = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, total or 1)) as executor:
+        future_to_server = {
+            executor.submit(whois.lookup, server, args.server, args.authoritative, use_doh): server
+            for server in servers
+        }
+        for future in concurrent.futures.as_completed(future_to_server):
+            server = future_to_server[future]
+            try:
+                lookup_by_server[server] = future.result()
+            except Exception as e:  # noqa: BLE001 - a single bad server shouldn't abort the scan
+                lookup_by_server[server] = []
+                print(f"  ⚠ {server} 查询出错: {e}", file=sys.stderr)
+            done += 1
+            print(f"[{done}/{total}] {server}", file=sys.stderr)
+
     _print_clash_profile_whois(profile, lookup_by_server)
     return 0
 

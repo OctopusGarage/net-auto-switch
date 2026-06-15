@@ -353,11 +353,17 @@ profiles_yaml = "{profiles_yaml}"
     assert controller_cfgs
     assert controller_cfgs[0].api == "http://127.0.0.1:9097"
     assert controller_cfgs[0].profiles_yaml == str(profiles_yaml)
-    assert calls == [
+    # Lookups run concurrently, so call order is not deterministic.
+    assert set(calls) == {
         ("a.example.com", "1.1.1.1", False, True),
         ("203.0.113.10", "1.1.1.1", False, True),
-    ]
-    out = capsys.readouterr().out
+    }
+    captured = capsys.readouterr()
+    out = captured.out
+    # Per-server progress goes to stderr so it doesn't pollute the piped table.
+    assert "[1/2]" in captured.err
+    assert "[2/2]" in captured.err
+    assert "a.example.com" in captured.err
     assert "待解析 server 数 (去重后): 2" in out
     assert "=== [Current Profile] uid=current-uid  节点数: 3 <- current ===" in out
     assert "Node A" in out
