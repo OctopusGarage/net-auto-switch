@@ -7,7 +7,7 @@ from net_auto_switch.config import ConfigError, load_config
 
 def _write(tmp_path, content):
     p = tmp_path / "config.toml"
-    p.write_text(textwrap.dedent(content))
+    p.write_text(textwrap.dedent(content), encoding="utf-8")
     return p
 
 

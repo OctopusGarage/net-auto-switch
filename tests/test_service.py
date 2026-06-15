@@ -1,3 +1,4 @@
+import os
 from unittest import mock
 
 from net_auto_switch import service
@@ -72,4 +73,4 @@ def test_install_dispatch_macos_runs_launchd_script():
         ok = service.install("/opt/nas", "/opt/nas/config.toml")
     assert ok
     cmd = run.call_args[0][0]
-    assert cmd[0] == "bash" and cmd[1].endswith("scripts/install-launchd.sh")
+    assert cmd[0] == "bash" and os.path.basename(cmd[1]) == "install-launchd.sh"
