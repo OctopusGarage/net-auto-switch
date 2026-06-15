@@ -1,11 +1,25 @@
 import dataclasses
 import os
+import sys
 import tomllib
 from dataclasses import dataclass, field
 
 
 class ConfigError(Exception):
     pass
+
+
+def _default_profiles_yaml():
+    """Clash Verge Rev's profiles.yaml, per-platform. Only read for the (macOS-only)
+    profile fallback; non-macOS defaults are best-effort."""
+    name = "io.github.clash-verge-rev.clash-verge-rev"
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    elif os.name == "nt":
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    else:
+        base = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+    return os.path.join(base, name, "profiles.yaml")
 
 
 @dataclass
@@ -46,9 +60,7 @@ class ClashConfig:
     delay_limit: int = 300
     max_switch_per_min: int = 3
     max_profile_switch_per_30min: int = 1
-    profiles_yaml: str = (
-        "~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles.yaml"
-    )
+    profiles_yaml: str = field(default_factory=_default_profiles_yaml)
     group_priority: list = field(default_factory=lambda: ["SG", "Tokyo", "JP_Other"])
     regions: dict = field(default_factory=lambda: dict(DEFAULT_REGIONS))
     trial: str = DEFAULT_TRIAL

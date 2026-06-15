@@ -1,4 +1,5 @@
 import logging
+import sys
 import time
 
 import requests
@@ -63,11 +64,15 @@ class Orchestrator:
         now = now if now is not None else time.time()
         marker = " [dry-run]" if self.dry_run else ""
         log.info(f"===== cycle start{marker} =====")
-        if self.cfg.wifi.enabled:
+        # The WiFi layer drives macOS-only tools (networksetup); on other platforms
+        # it's skipped and only the cross-platform Clash layer runs.
+        if self.cfg.wifi.enabled and sys.platform == "darwin":
             try:
                 self._maybe_wifi(now)
             except Exception:
                 log.exception("WiFi step failed")
+        elif self.cfg.wifi.enabled:
+            log.debug("WiFi layer is macOS-only; skipping on this platform")
         else:
             log.debug("WiFi layer disabled")
         try:

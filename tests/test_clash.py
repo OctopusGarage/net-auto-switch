@@ -184,6 +184,28 @@ def test_run_cycle_does_not_notify_when_disabled():
     send.assert_not_called()
 
 
+def test_run_cycle_skips_profile_fallback_on_non_macos():
+    # All nodes dead would normally trigger the AppleScript profile fallback; on
+    # non-macOS that's skipped and the cycle just returns without touching profiles.
+    c = ClashController(ClashConfig(secret="x", ip_enrich={}))
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP Tokyo dead"},
+        "JP Tokyo dead": {"type": "Vmess"},
+    }
+    with (
+        mock.patch("net_auto_switch.clash.sys.platform", "linux"),
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="global"),
+        mock.patch.object(c, "test_all_delays", return_value={"JP Tokyo dead": 9999}),
+        mock.patch.object(c, "get_profiles") as get_profiles,
+        mock.patch.object(c, "switch_profile_by_name") as switch_profile,
+    ):
+        result = c.run_cycle(dry_run=False)
+    get_profiles.assert_not_called()
+    switch_profile.assert_not_called()
+    assert result is False
+
+
 def test_get_exit_operator_maps_isp_via_hints():
     c = make_ctrl()
     payload = {"isp": "Amazon.com, Inc.", "org": "AWS EC2", "country_code": "US"}

@@ -84,6 +84,7 @@ def test_run_once_skips_wifi_when_disabled():
 def test_run_once_runs_wifi_then_clash_when_enabled():
     o = make_orch(enabled=True)
     with (
+        mock.patch("net_auto_switch.orchestrator.sys.platform", "darwin"),
         mock.patch.object(o, "_maybe_wifi") as wifi_step,
         mock.patch.object(o.clash, "run_cycle", return_value=False) as clash_step,
     ):
@@ -92,9 +93,22 @@ def test_run_once_runs_wifi_then_clash_when_enabled():
     clash_step.assert_called_once()
 
 
+def test_run_once_skips_wifi_on_non_macos():
+    o = make_orch(enabled=True)
+    with (
+        mock.patch("net_auto_switch.orchestrator.sys.platform", "linux"),
+        mock.patch.object(o, "_maybe_wifi") as wifi_step,
+        mock.patch.object(o.clash, "run_cycle", return_value=False) as clash_step,
+    ):
+        o.run_once(now=1000.0)
+    wifi_step.assert_not_called()  # WiFi layer is macOS-only
+    clash_step.assert_called_once()  # Clash core still runs
+
+
 def test_wifi_failure_does_not_block_clash():
     o = make_orch(enabled=True)
     with (
+        mock.patch("net_auto_switch.orchestrator.sys.platform", "darwin"),
         mock.patch.object(o, "_maybe_wifi", side_effect=RuntimeError("boom")),
         mock.patch.object(o.clash, "run_cycle", return_value=False) as clash_step,
     ):
@@ -105,6 +119,7 @@ def test_wifi_failure_does_not_block_clash():
 def test_clash_failure_is_swallowed():
     o = make_orch(enabled=True)
     with (
+        mock.patch("net_auto_switch.orchestrator.sys.platform", "darwin"),
         mock.patch.object(o, "_maybe_wifi") as wifi_step,
         mock.patch.object(o.clash, "run_cycle", side_effect=RuntimeError("boom")),
     ):
@@ -140,6 +155,7 @@ def test_run_once_dry_run_header_marked():
 def test_run_once_logs_traceback_on_wifi_error():
     o = make_orch(enabled=True)
     with (
+        mock.patch("net_auto_switch.orchestrator.sys.platform", "darwin"),
         mock.patch.object(o, "_maybe_wifi", side_effect=RuntimeError("boom")),
         mock.patch.object(o.clash, "run_cycle", return_value=False),
         mock.patch("net_auto_switch.orchestrator.log") as log,

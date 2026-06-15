@@ -26,7 +26,18 @@ from .setup import (
 
 log = logging.getLogger("net_auto_switch.cli")
 
-LOG_PATH = os.path.expanduser("~/Library/Logs/net_auto_switch.log")
+
+def _default_log_path():
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Logs/net_auto_switch.log")
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        return os.path.join(base, "net-auto-switch", "net_auto_switch.log")
+    base = os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+    return os.path.join(base, "net-auto-switch", "net_auto_switch.log")
+
+
+LOG_PATH = _default_log_path()
 LOG_BACKUP_DAYS = 14
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -172,7 +183,13 @@ def cmd_init(argv):
     args = p.parse_args(argv)
 
     if sys.platform != "darwin":
-        print("✗ net-auto-switch is macOS-only (it relies on launchd, networksetup, AppleScript).")
+        print("✗ The guided `init` wizard is macOS-only (Clash Verge auto-detection + launchd).")
+        print("  The Clash node auto-switch core works cross-platform, though — on Linux/Windows:")
+        print("    1. cp config.example.toml config.toml")
+        print("    2. fill in your Clash API url / secret / proxy_port")
+        print("    3. run:  uv run net-auto-switch --once --dry-run   (then without --dry-run)")
+        print("  Set up your own service (systemd / Task Scheduler) to keep it running.")
+        print("  Note: WiFi switching, desktop notifications, and profile fallback are macOS-only.")
         return 1
 
     print("🔍 Detecting Clash Verge…")
