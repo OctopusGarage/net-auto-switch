@@ -57,7 +57,7 @@ def test_render_config_toml_roundtrips(tmp_path):
         profiles_yaml="/some/profiles.yaml",
     )
     out = tmp_path / "config.toml"
-    out.write_text(render_config_toml(det, ["SG", "Tokyo"]))
+    out.write_text(render_config_toml(det, ["SG", "Tokyo"]), encoding="utf-8")
 
     cfg = load_config(str(out))
     assert cfg.clash.api == "http://127.0.0.1:9097"
@@ -147,7 +147,7 @@ def test_render_config_toml_custom_regions(tmp_path):
     )
     regions = {"US": r"(US|美国)", "JP": r"(JP|日本)"}
     out = tmp_path / "config.toml"
-    out.write_text(render_config_toml(det, ["US", "JP"], regions))
+    out.write_text(render_config_toml(det, ["US", "JP"], regions), encoding="utf-8")
 
     cfg = load_config(str(out))
     assert list(cfg.clash.regions) == ["US", "JP"]
