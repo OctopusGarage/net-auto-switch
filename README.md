@@ -239,6 +239,14 @@ uv run ruff check .    # static checks
 uv run ruff format .   # format
 ```
 
+Install the git pre-commit hook once after cloning so these same gates
+(`ruff check` / `ruff format --check` / `pytest` / secret scan) run before every
+commit — the same checks CI enforces:
+
+```bash
+./scripts/install-hooks.sh   # bypass once with: git commit --no-verify
+```
+
 ## Requirements
 
 - macOS, with [uv](https://docs.astral.sh/uv/) (auto-manages Python 3.12, see `.python-version`).

@@ -1,0 +1,29 @@
+#!/bin/bash
+# Pre-commit hook: run the same gates as CI before a commit is allowed, so
+# problems are caught locally instead of on GitHub. Install via
+# scripts/install-hooks.sh. Bypass once with `git commit --no-verify`.
+set -euo pipefail
+
+# Resolve the repo root via git (this hook is a symlink, so $0's dirname is
+# .git/hooks, not the script's real location).
+cd "$(git rev-parse --show-toplevel)"
+
+echo "[pre-commit] ruff check…"
+uv run ruff check .
+
+echo "[pre-commit] ruff format --check…"
+uv run ruff format --check .
+
+echo "[pre-commit] pytest…"
+uv run pytest -q
+
+# Secret / personal-path scan (see CLAUDE.md). config.example.toml is the one
+# intentional placeholder and is excluded from the source scan below.
+echo "[pre-commit] secret scan…"
+if grep -rn "your-clash-api-secret\|/Users/[a-z]\+/\|/home/[a-z]\+/" \
+    --include="*.py" net_auto_switch/ tests/; then
+  echo "[pre-commit] ✗ found a secret or personal path above — aborting commit."
+  exit 1
+fi
+
+echo "[pre-commit] ✓ all checks passed."
