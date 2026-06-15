@@ -13,7 +13,7 @@ class Orchestrator:
     def __init__(self, cfg, dry_run=False):
         self.cfg = cfg
         self.dry_run = dry_run
-        self.clash = ClashController(cfg.clash)
+        self.clash = ClashController(cfg.clash, notify=cfg.notify)
         self.last_wifi_check = 0.0
         self.last_wifi_switch = 0.0
 
@@ -52,6 +52,10 @@ class Orchestrator:
         if improvement >= wcfg.min_improvement_ms:
             if wifi_mod.switch_to(best, wcfg.interface, dry_run=self.dry_run):
                 self.last_wifi_switch = now
+                if self.cfg.notify and not self.dry_run:
+                    from . import notify
+
+                    notify.send("📶 WiFi 已切换", best, f"延迟 {best_lat}ms")
         else:
             log.info(f"Improvement {improvement}ms below threshold, not switching.")
 

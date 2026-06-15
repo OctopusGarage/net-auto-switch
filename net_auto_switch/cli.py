@@ -321,12 +321,38 @@ def cmd_update(argv):
     return 0
 
 
+def cmd_whois(argv):
+    """Resolve a domain / IP to its operator or cloud provider."""
+    from . import whois
+
+    p = argparse.ArgumentParser(
+        prog="net-auto-switch whois",
+        description="解析域名/IP 对应的运营商",
+    )
+    p.add_argument("-s", "--server", default="1.1.1.1", help="指定 DNS 服务器 (默认 1.1.1.1)")
+    p.add_argument("-a", "--authoritative", action="store_true",
+                   help="查询域名的权威 NS, 再向该 NS 直接发起 A 查询 (隐含 --no-doh)")
+    p.add_argument("--no-doh", dest="doh", action="store_false", default=True,
+                   help="改用系统 DNS 解析 (默认走 Cloudflare DoH 绕开 TUN 模式劫持)")
+    p.add_argument("targets", nargs="+", help="域名或 IP")
+    args = p.parse_args(argv)
+
+    # DoH is HTTPS-based; -a relies on plaintext DNS to a specific NS, so the two
+    # are mutually exclusive. Asking for -a implicitly turns DoH off.
+    use_doh = args.doh and not args.authoritative
+    for target in args.targets:
+        whois.analyze(target.strip(), args.server, args.authoritative, use_doh)
+    return 0
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "init":
         sys.exit(cmd_init(argv[1:]))
     if argv and argv[0] == "update":
         sys.exit(cmd_update(argv[1:]))
+    if argv and argv[0] == "whois":
+        sys.exit(cmd_whois(argv[1:]))
 
     parser = argparse.ArgumentParser(description="net-auto-switch")
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")

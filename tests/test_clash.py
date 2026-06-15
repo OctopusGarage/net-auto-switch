@@ -136,6 +136,96 @@ def test_switch_proxy_targets_given_group():
     assert put.call_args[1]["json"] == {"name": "node-x"}
 
 
+def test_run_cycle_notifies_on_switch_when_enabled():
+    c = ClashController(ClashConfig(secret="x", ip_enrich={}), notify=True)
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP Tokyo dead"},
+        "JP Tokyo dead": {"type": "Vmess"},
+        "JP Tokyo good": {"type": "Vmess"},
+    }
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="global"),
+        mock.patch.object(
+            c, "test_all_delays",
+            return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
+        ),
+        mock.patch.object(c, "switch_proxy"),
+        mock.patch.object(c, "get_exit_operator", return_value="AWS (US)"),
+        mock.patch("net_auto_switch.notify.send") as send,
+    ):
+        c.run_cycle(dry_run=False)
+    send.assert_called_once()
+    assert send.call_args[0][1] == "JP Tokyo good"  # message = target node
+    assert "AWS (US)" in send.call_args[0][2]  # subtitle carries the operator
+
+
+def test_run_cycle_does_not_notify_when_disabled():
+    c = ClashController(ClashConfig(secret="x", ip_enrich={}))  # notify defaults False
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP Tokyo dead"},
+        "JP Tokyo dead": {"type": "Vmess"},
+        "JP Tokyo good": {"type": "Vmess"},
+    }
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="global"),
+        mock.patch.object(
+            c, "test_all_delays",
+            return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
+        ),
+        mock.patch.object(c, "switch_proxy"),
+        mock.patch.object(c, "get_exit_operator", return_value="AWS (US)"),
+        mock.patch("net_auto_switch.notify.send") as send,
+    ):
+        c.run_cycle(dry_run=False)
+    send.assert_not_called()
+
+
+def test_get_exit_operator_maps_isp_via_hints():
+    c = make_ctrl()
+    payload = {"isp": "Amazon.com, Inc.", "org": "AWS EC2", "country_code": "US"}
+    with mock.patch("net_auto_switch.clash.requests.get") as get:
+        get.return_value.json.return_value = payload
+        assert c.get_exit_operator() == "AWS / Amazon (US)"
+
+
+def test_get_exit_operator_falls_back_to_isp_string():
+    c = make_ctrl()
+    payload = {"isp": "Some Local Telecom", "org": "", "country_code": "JP"}
+    with mock.patch("net_auto_switch.clash.requests.get") as get:
+        get.return_value.json.return_value = payload
+        assert c.get_exit_operator() == "Some Local Telecom (JP)"
+
+
+def test_get_exit_operator_returns_empty_on_error():
+    c = make_ctrl()
+    with mock.patch("net_auto_switch.clash.requests.get", side_effect=RuntimeError("boom")):
+        assert c.get_exit_operator() == ""
+
+
+def test_run_cycle_dry_run_does_not_probe_exit_operator():
+    # A dead current node would normally trigger a switch; under dry-run no switch
+    # happens, so the exit-operator IP probe must never fire (ADR-0003).
+    c = make_ctrl()
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP Tokyo dead"},
+        "JP Tokyo dead": {"type": "Vmess"},
+        "JP Tokyo good": {"type": "Vmess"},
+    }
+    with (
+        mock.patch.object(c, "get_proxies", return_value=proxies),
+        mock.patch.object(c, "get_mode", return_value="global"),
+        mock.patch.object(
+            c, "test_all_delays",
+            return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
+        ),
+        mock.patch.object(c, "get_exit_operator") as op,
+    ):
+        c.run_cycle(dry_run=True)
+    op.assert_not_called()
+
+
 # ----- managed group resolution -----
 
 
@@ -208,9 +298,11 @@ def test_run_cycle_switches_resolved_managed_group():
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "switch_proxy") as switch,
+        mock.patch.object(c, "get_exit_operator", return_value="AWS (US)") as op,
     ):
         c.run_cycle(dry_run=False)
     switch.assert_called_once_with("JP Tokyo good", "Proxy")
+    op.assert_called_once()  # exit operator is probed after a real switch
 
 
 def test_run_cycle_missing_managed_group_skips_without_switching():

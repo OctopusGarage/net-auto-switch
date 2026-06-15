@@ -33,6 +33,41 @@ def test_cooldown_blocks_within_period():
     assert o._cooldown_ok(now=100.0, last_switch=0.0) is False
 
 
+def _wire_wifi_switch(w):
+    """Drive wifi_mod mocks so _maybe_wifi performs a switch to 'BetterNet'."""
+    w.get_current_wifi.return_value = "OldNet"
+    w.ping_host.return_value = (500, 10)
+    w.is_bad_network.return_value = True
+    w.candidate_wifis.return_value = ["BetterNet"]
+    w.find_best_wifi.return_value = ("BetterNet", 50)
+    w.switch_to.return_value = True
+
+
+def test_maybe_wifi_notifies_on_switch():
+    o = make_orch(enabled=True, switch_cooldown=0, min_improvement_ms=50)
+    with (
+        mock.patch("net_auto_switch.orchestrator.wifi_mod") as w,
+        mock.patch("net_auto_switch.notify.send") as send,
+    ):
+        _wire_wifi_switch(w)
+        o._maybe_wifi(now=10000.0)
+    send.assert_called_once()
+    assert send.call_args[0][1] == "BetterNet"
+
+
+def test_maybe_wifi_does_not_notify_on_dry_run():
+    cfg = Config(wifi=WifiConfig(enabled=True, switch_cooldown=0, min_improvement_ms=50),
+                 clash=ClashConfig(secret="x"))
+    o = Orchestrator(cfg, dry_run=True)
+    with (
+        mock.patch("net_auto_switch.orchestrator.wifi_mod") as w,
+        mock.patch("net_auto_switch.notify.send") as send,
+    ):
+        _wire_wifi_switch(w)
+        o._maybe_wifi(now=10000.0)
+    send.assert_not_called()
+
+
 def test_run_once_skips_wifi_when_disabled():
     o = make_orch(enabled=False)
     with (
