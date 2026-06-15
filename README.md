@@ -179,9 +179,26 @@ SG = "(SG|Singapore|新加坡|🇸🇬)"
 Nodes are classified by the **first** matching region (define more specific ones
 first); anything matching none is left untouched.
 
+## Run as a service (all platforms)
+
+A scheduler/daemon is essential — the switcher only helps if it keeps running. Use
+the platform-native mechanism via one command ([ADR-0016](docs/adr/0016-cross-platform-service.md)):
+
+```bash
+uv run net-auto-switch service install     # launchd / systemd --user / Task Scheduler
+uv run net-auto-switch service status
+uv run net-auto-switch service uninstall
+```
+
+- **macOS** → launchd LaunchAgent (long-running daemon, restart on crash).
+- **Linux** → systemd `--user` service (`Restart=always`, `enable-linger` so it runs
+  without an active login).
+- **Windows** → a Task Scheduler task that runs one switch cycle (`--once`) every
+  `main_interval` minutes.
+
 ## Production Deployment (macOS launchd)
 
-Run as a launchd service: launch at boot + auto-restart on crash.
+Equivalent to `service install` on macOS; the script is also called by the wizard.
 
 ```bash
 ./scripts/install-launchd.sh     # install deps + generate plist + register & load
@@ -264,7 +281,8 @@ degrade gracefully elsewhere:
 | Desktop notifications | ✅ osascript | ✅ `notify-send` | — (no-op) |
 | WiFi auto-switch | ✅ | — (macOS-only) | — |
 | Profile fallback (all nodes dead) | ✅ | — (macOS-only) | — |
-| `init` wizard + service install | ✅ launchd | manual | manual |
+| `service install` (background service) | ✅ launchd | ✅ systemd | ✅ Task Scheduler |
+| `init` auto-detect wizard | ✅ | manual config | manual config |
 
 On Linux/Windows: copy `config.example.toml` to `config.toml`, fill in your Clash
 API url/secret/proxy_port, run `uv run net-auto-switch`, and wire up your own

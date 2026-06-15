@@ -233,10 +233,12 @@ macOS 专属能力在其它平台优雅降级:
 | 桌面通知 | ✅ osascript | ✅ `notify-send` | —(空操作) |
 | WiFi 自动切换 | ✅ | —(仅 macOS) | — |
 | Profile 兜底(全节点挂掉) | ✅ | —(仅 macOS) | — |
-| `init` 向导 + 服务安装 | ✅ launchd | 手动 | 手动 |
+| `service install`(后台服务) | ✅ launchd | ✅ systemd | ✅ 任务计划 |
+| `init` 自动探测向导 | ✅ | 手动配置 | 手动配置 |
 
 Linux/Windows:把 `config.example.toml` 复制为 `config.toml`,填好 Clash API url/secret/proxy_port,
-`uv run net-auto-switch` 运行,并自行配置常驻服务(systemd / 任务计划)。详见 [ADR-0015](docs/adr/0015-cross-platform-core.md)。
+`uv run net-auto-switch` 运行,再用 `uv run net-auto-switch service install` 安装常驻服务
+(systemd / 任务计划)。详见 [ADR-0015](docs/adr/0015-cross-platform-core.md)、[ADR-0016](docs/adr/0016-cross-platform-service.md)。
 
 ## Requirements
 

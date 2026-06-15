@@ -188,7 +188,8 @@ def cmd_init(argv):
         print("    1. cp config.example.toml config.toml")
         print("    2. fill in your Clash API url / secret / proxy_port")
         print("    3. run:  uv run net-auto-switch --once --dry-run   (then without --dry-run)")
-        print("  Set up your own service (systemd / Task Scheduler) to keep it running.")
+        print("    4. install the background service (systemd / Task Scheduler):")
+        print("         uv run net-auto-switch service install")
         print("  Note: WiFi switching, desktop notifications, and profile fallback are macOS-only.")
         return 1
 
@@ -409,6 +410,43 @@ def cmd_whois(argv):
     return 0
 
 
+def cmd_service(argv):
+    """Install/uninstall/check the background service using the platform-native
+    mechanism (launchd on macOS, systemd --user on Linux, Task Scheduler on Windows)."""
+    from . import service
+
+    p = argparse.ArgumentParser(
+        prog="net-auto-switch service",
+        description="Manage the background service (launchd / systemd / Task Scheduler)",
+    )
+    p.add_argument("action", choices=["install", "uninstall", "status"])
+    p.add_argument("--config", default=None, help="Path to config.toml (for install)")
+    args = p.parse_args(argv)
+
+    config_path = os.path.abspath(args.config or os.path.join(PROJECT_DIR, "config.toml"))
+
+    if args.action == "uninstall":
+        return 0 if service.uninstall() else 1
+    if args.action == "status":
+        return 0 if service.status() else 1
+
+    # install
+    if not os.path.exists(config_path):
+        print(f"✗ No config at {config_path}. Copy config.example.toml and fill it in first.")
+        return 1
+    # Windows runs `--once` on a timer; derive the interval from main_interval.
+    interval_minutes = 10
+    try:
+        interval_minutes = max(1, load_config(config_path).main_interval // 60)
+    except ConfigError:
+        pass
+    print("📦 Syncing dependencies (uv sync)…")
+    subprocess.run(["uv", "sync"], cwd=PROJECT_DIR, check=False)
+    ok = service.install(PROJECT_DIR, config_path, interval_minutes)
+    print("✓ Service installed." if ok else "✗ Service install failed (see output above).")
+    return 0 if ok else 1
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "init":
@@ -417,6 +455,8 @@ def main(argv=None):
         sys.exit(cmd_update(argv[1:]))
     if argv and argv[0] == "whois":
         sys.exit(cmd_whois(argv[1:]))
+    if argv and argv[0] == "service":
+        sys.exit(cmd_service(argv[1:]))
 
     parser = argparse.ArgumentParser(description="net-auto-switch")
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")

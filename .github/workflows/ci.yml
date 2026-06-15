@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       # Actions pinned to commit SHAs (supply-chain hardening); the trailing
       # comment tracks the human-readable version Dependabot bumps.
@@ -35,6 +39,7 @@ jobs:
         run: uv run mypy net_auto_switch
 
       - name: Shellcheck
+        if: runner.os == 'Linux'
         run: shellcheck --severity=warning scripts/*.sh scripts/pre-commit install.sh
 
       - name: Test (pytest + coverage)
