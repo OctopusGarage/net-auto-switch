@@ -222,11 +222,27 @@ uv run ruff check .    # 静态检查
 uv run ruff format .   # 格式化
 ```
 
+## 平台支持
+
+**Clash 节点自动切换核心是跨平台的**(只通过 HTTP 调 Clash Verge API),Linux/Windows 也能跑;
+macOS 专属能力在其它平台优雅降级:
+
+| 能力 | macOS | Linux | Windows |
+|------|:-----:|:-----:|:-------:|
+| Clash 节点 / 按延迟切换 | ✅ | ✅ | ✅ |
+| 桌面通知 | ✅ osascript | ✅ `notify-send` | —(空操作) |
+| WiFi 自动切换 | ✅ | —(仅 macOS) | — |
+| Profile 兜底(全节点挂掉) | ✅ | —(仅 macOS) | — |
+| `init` 向导 + 服务安装 | ✅ launchd | 手动 | 手动 |
+
+Linux/Windows:把 `config.example.toml` 复制为 `config.toml`,填好 Clash API url/secret/proxy_port,
+`uv run net-auto-switch` 运行,并自行配置常驻服务(systemd / 任务计划)。详见 [ADR-0015](docs/adr/0015-cross-platform-core.md)。
+
 ## Requirements
 
-- macOS,[uv](https://docs.astral.sh/uv/)(自动管理 Python 3.12,见 `.python-version`)
+- [uv](https://docs.astral.sh/uv/)(自动管理 Python,见 `.python-version`)
 - Clash Verge 已运行且开启外部控制(API 端口与 secret 与配置一致)
-- WiFi 切换需相应系统权限;profile 兜底依赖"系统设置 → 隐私与安全性 → 辅助功能"授权
+- 仅 macOS:WiFi 切换需系统权限;profile 兜底依赖"系统设置 → 隐私与安全性 → 辅助功能"授权
 
 ## Contributing
 

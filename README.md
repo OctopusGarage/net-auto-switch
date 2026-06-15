@@ -252,11 +252,29 @@ once after cloning so these gates (`ruff` / `mypy` / `pytest` / `shellcheck` /
 ./scripts/install-hooks.sh   # bypass once with: git commit --no-verify
 ```
 
+## Platform support
+
+The **Clash node auto-switch core is cross-platform** (it only talks to the Clash
+Verge API over HTTP) — it runs on Linux and Windows too. The macOS-specific extras
+degrade gracefully elsewhere:
+
+| Feature | macOS | Linux | Windows |
+|---------|:-----:|:-----:|:-------:|
+| Clash node / profile-by-delay switching | ✅ | ✅ | ✅ |
+| Desktop notifications | ✅ osascript | ✅ `notify-send` | — (no-op) |
+| WiFi auto-switch | ✅ | — (macOS-only) | — |
+| Profile fallback (all nodes dead) | ✅ | — (macOS-only) | — |
+| `init` wizard + service install | ✅ launchd | manual | manual |
+
+On Linux/Windows: copy `config.example.toml` to `config.toml`, fill in your Clash
+API url/secret/proxy_port, run `uv run net-auto-switch`, and wire up your own
+service (systemd / Task Scheduler). See [ADR-0015](docs/adr/0015-cross-platform-core.md).
+
 ## Requirements
 
-- macOS, with [uv](https://docs.astral.sh/uv/) (auto-manages Python 3.12, see `.python-version`).
+- [uv](https://docs.astral.sh/uv/) (auto-manages Python, see `.python-version`).
 - Clash Verge running with external control enabled (API port & secret matching the config).
-- WiFi switching needs the relevant system permissions; profile fallback depends on authorizing **System Settings → Privacy & Security → Accessibility**.
+- macOS only: WiFi switching needs system permissions; profile fallback needs **System Settings → Privacy & Security → Accessibility**.
 
 ## Contributing
 

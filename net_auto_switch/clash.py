@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import time
 
 import requests
@@ -322,6 +323,11 @@ end tell
         should_switch, target = self.select_node(current, current_group, groups, delays)
 
         all_dead = not any(delays.get(n, DEAD) < DEAD for n in all_nodes)
+        if not should_switch and all_dead and sys.platform != "darwin":
+            # Profile fallback drives Clash Verge via AppleScript UI automation,
+            # which is macOS-only; elsewhere there's nothing more to try this cycle.
+            log.warning("All nodes unreachable; profile fallback is macOS-only, skipping.")
+            return False
         if not should_switch and all_dead:
             log.warning("All nodes unreachable, trying profile switch...")
             profiles, current_uid = self.get_profiles()
