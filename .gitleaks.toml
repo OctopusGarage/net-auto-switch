@@ -1,0 +1,7 @@
+# gitleaks config — extends the built-in ruleset.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "config.example.toml carries an intentional placeholder secret"
+paths = ['''config\.example\.toml''']
