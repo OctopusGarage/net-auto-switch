@@ -38,11 +38,26 @@ build-backend = "setuptools.build_meta"
 include = ["net_auto_switch*"]
 
 [dependency-groups]
-dev = ["pytest>=7.0", "ruff>=0.4"]
+dev = [
+    "mypy>=2.1.0",
+    "pip-audit>=2.10.1",
+    "pytest>=7.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.4",
+    "types-pyyaml>=6.0.12.20260518",
+    "types-requests>=2.33.0.20260518",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["net_auto_switch"]
+# Third-party libs without bundled types are covered by types-* stubs; anything
+# still unstubbed is ignored rather than failing the gate.
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

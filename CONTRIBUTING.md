@@ -23,7 +23,17 @@ Run the full quality gate locally; CI runs the same checks:
 ```bash
 uv run ruff check .          # lint
 uv run ruff format --check . # format
+uv run mypy net_auto_switch  # type check
 uv run pytest                # tests
+shellcheck scripts/*.sh scripts/pre-commit install.sh   # shell scripts
+```
+
+Better yet, install the pre-commit hook once so these run automatically before
+every commit (it also runs a [gitleaks](https://github.com/gitleaks/gitleaks)
+secret scan):
+
+```bash
+./scripts/install-hooks.sh
 ```
 
 ## Conventions

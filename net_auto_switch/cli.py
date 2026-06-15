@@ -259,9 +259,11 @@ def cmd_init(argv):
     if os.path.exists(out):
         backup = out + ".bak"
         shutil.copy2(out, backup)
+        os.chmod(backup, 0o600)  # the config carries the Clash secret — owner-only
         print(f"• Backed up existing {out} -> {backup}")
     with open(out, "w", encoding="utf-8") as f:
         f.write(render_config_toml(detected, group_priority, regions))
+    os.chmod(out, 0o600)  # the config carries the Clash secret — owner-only
     print(f"✓ Wrote {out}")
 
     try:

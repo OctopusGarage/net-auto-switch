@@ -235,13 +235,17 @@ net-auto-switch/
 
 ```bash
 uv run pytest          # full unit-test suite
-uv run ruff check .    # static checks
+uv run pytest --cov=net_auto_switch --cov-report=term-missing   # with coverage
+uv run ruff check .    # lint
 uv run ruff format .   # format
+uv run mypy net_auto_switch   # type check
+uv run pip-audit --skip-editable   # dependency vulnerability scan
 ```
 
-Install the git pre-commit hook once after cloning so these same gates
-(`ruff check` / `ruff format --check` / `pytest` / secret scan) run before every
-commit — the same checks CI enforces:
+Shell scripts are checked with `shellcheck`; secrets with
+[gitleaks](https://github.com/gitleaks/gitleaks). Install the git pre-commit hook
+once after cloning so these gates (`ruff` / `mypy` / `pytest` / `shellcheck` /
+`gitleaks`) run before every commit — the same checks CI enforces:
 
 ```bash
 ./scripts/install-hooks.sh   # bypass once with: git commit --no-verify
