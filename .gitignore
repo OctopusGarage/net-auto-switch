@@ -2,7 +2,8 @@
 # Project-specific
 # ---------------------------------------------------------------------------
 # Real config holds secrets (Clash API secret, etc.) — never commit it.
-config.toml
+# Glob also covers config.toml.bak (written by `init`, carries the same secret).
+config.toml*
 
 # Runtime artifacts
 logs/
