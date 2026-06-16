@@ -134,10 +134,18 @@ contacting right now and through which outbound node — `host → node → rule
 are folded by `host + node` with a connection count by default (`--raw` lists each
 one). Add `--whois` to label each target's IP / operator / country (it resolves the
 domain when Clash doesn't expose an IP, i.e. proxied connections), or `-w [SECONDS]`
-to refresh live (default every 2s). It only sees traffic that goes through Clash
+to refresh live, top-style (default every 2s; press `q` or Ctrl-C to quit). It only sees traffic that goes through Clash
 (proxied / TUN), not direct/bypassed traffic. `connections -h` shows all options.
 
 `uv run net-auto-switch` is equivalent to `uv run python -m net_auto_switch.cli`.
+
+### Agent skill (for AI agents)
+
+The repo ships a Claude Code / cross-agent **Agent Skill** ([`skills/net-auto-switch`](./skills/net-auto-switch/SKILL.md)) that teaches an AI agent to operate and diagnose the tool (what node am I on, which operator owns a host, live connections, service status, update). `install.sh` offers to install it; or do it yourself any time:
+
+```bash
+npx skills add OctopusGarage/net-auto-switch -y -g   # installs to ~/.agents/skills
+```
 
 ### Process management scripts
 

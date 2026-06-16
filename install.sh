@@ -119,6 +119,37 @@ register_zsh_completion() {
 info "Enabling zsh tab-completion..."
 register_zsh_completion
 
+# 5c. AI agent skill (optional, opt-in). Installs the net-auto-switch agent skill
+#     globally via the `skills` CLI (~/.agents/skills), so AI agents like Claude
+#     Code can drive the tool. Needs Node/npx; idempotent (skips if present).
+SKILLS_SLUG="net-auto-switch"
+install_agent_skill() {
+  if ! command -v npx >/dev/null 2>&1; then
+    info "Skipping agent skill: npx (Node.js) not found. Install later with: npx skills add $REPO -y -g"
+    return 0
+  fi
+  if npx -y skills ls -g 2>/dev/null | grep -q "$SKILLS_SLUG"; then
+    info "Agent skill already installed."
+    return 0
+  fi
+  info "Installing agent skill via 'skills'..."
+  if npx -y skills add "$REPO" -y -g >/dev/null 2>&1; then
+    info "Agent skill installed (~/.agents/skills)."
+  else
+    info "Agent skill install failed. Retry later with: npx skills add $REPO -y -g"
+  fi
+}
+if [ -e /dev/tty ]; then
+  printf '> Install the AI agent skill for Claude Code / agents? [y/N] ' >/dev/tty
+  read -r skill_ans </dev/tty || skill_ans=""
+  case "$skill_ans" in
+    [yY] | [yY][eE][sS]) install_agent_skill ;;
+    *) info "Skipped agent skill. Install later with: npx skills add $REPO -y -g" ;;
+  esac
+else
+  info "Non-interactive: skipped agent skill. Install later with: npx skills add $REPO -y -g"
+fi
+
 # 6. guided setup - read prompts from the terminal even when piped via curl
 info "Starting guided setup..."
 if [ -e /dev/tty ]; then

@@ -5,6 +5,7 @@ import logging.handlers
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -570,9 +571,24 @@ def _print_clash_profile_whois(profile, lookup_by_server):
             )
 
 
-def _cmd_whois_current_clash_profile(args, use_doh):
+def _whois_concurrent(items, server, authoritative, use_doh):
+    """Run whois.lookup over `items` concurrently, yielding (item, future) as each
+    completes. Capped at 8 workers — whois servers are rate-limit sensitive — and
+    centralised here so both the profile scan and the connections enrichment share
+    the same lookup fan-out."""
     from . import whois
 
+    items = list(items)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(items) or 1)) as executor:
+        future_to_item = {
+            executor.submit(whois.lookup, item, server, authoritative, use_doh): item
+            for item in items
+        }
+        for future in concurrent.futures.as_completed(future_to_item):
+            yield future_to_item[future], future
+
+
+def _cmd_whois_current_clash_profile(args, use_doh):
     try:
         clash_cfg = _resolve_whois_clash_config(args.config)
         profile = _load_clash_api_profile(clash_cfg)
@@ -589,20 +605,14 @@ def _cmd_whois_current_clash_profile(args, use_doh):
     # stays pipe-clean. Output ordering is unaffected — the table re-keys by server.
     lookup_by_server = {}
     done = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, total or 1)) as executor:
-        future_to_server = {
-            executor.submit(whois.lookup, server, args.server, args.authoritative, use_doh): server
-            for server in servers
-        }
-        for future in concurrent.futures.as_completed(future_to_server):
-            server = future_to_server[future]
-            try:
-                lookup_by_server[server] = future.result()
-            except Exception as e:  # noqa: BLE001 - a single bad server shouldn't abort the scan
-                lookup_by_server[server] = []
-                print(f"  ⚠ {server} 查询出错: {e}", file=sys.stderr)
-            done += 1
-            print(f"[{done}/{total}] {server}", file=sys.stderr)
+    for server, future in _whois_concurrent(servers, args.server, args.authoritative, use_doh):
+        try:
+            lookup_by_server[server] = future.result()
+        except Exception as e:  # noqa: BLE001 - a single bad server shouldn't abort the scan
+            lookup_by_server[server] = []
+            print(f"  ⚠ {server} 查询出错: {e}", file=sys.stderr)
+        done += 1
+        print(f"[{done}/{total}] {server}", file=sys.stderr)
 
     _print_clash_profile_whois(profile, lookup_by_server)
     return 0
@@ -676,39 +686,43 @@ def _connection_target(row):
     return row.dest_ip or row.host
 
 
-def _enrich_targets(targets):
+def _enrich_targets(targets, cache=None):
     """Resolve + label each target concurrently, reusing the whois machinery.
     A target is a destination IP (whois'd directly) or a domain (DoH-resolved
-    then whois'd). Returns {target: (resolved_ip, "Operator (CC)")}."""
+    then whois'd). Returns {target: (resolved_ip, "Operator (CC)")}.
+
+    Successful results are memoised in `cache` — operator/IP don't change over a
+    session, so a watch loop resolves each target once instead of every tick.
+    Failed/empty lookups are left uncached so a later tick retries them."""
     from . import whois
 
-    out = {}
-    targets = [t for t in targets if t]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(targets) or 1)) as executor:
-        future_to_target = {
-            executor.submit(whois.lookup, t, "1.1.1.1", False, True): t for t in targets
-        }
-        for future in concurrent.futures.as_completed(future_to_target):
-            target = future_to_target[future]
-            try:
-                results = future.result()
-                if results:
-                    res = results[0]
-                    out[target] = (res.ip, whois.format_operator(res.operator, res.country))
-                else:
-                    out[target] = ("", "")
-            except Exception:  # noqa: BLE001 - a bad lookup just leaves the cells blank
-                out[target] = ("", "")
-    return out
+    cache = cache if cache is not None else {}
+    todo = [t for t in targets if t and t not in cache]
+    if not todo:
+        return cache
+    for target, future in _whois_concurrent(todo, "1.1.1.1", False, True):
+        try:
+            results = future.result()
+        except Exception:  # noqa: BLE001 - transient failure: stay uncached so it retries
+            continue
+        # Only cache successful lookups. An empty/failed result is left uncached
+        # (shows blank this tick) so a later watch tick can retry it, rather than
+        # pinning a transient DoH/whois failure as a permanent blank for the session.
+        if results:
+            res = results[0]
+            cache[target] = (res.ip, whois.format_operator(res.operator, res.country))
+    return cache
 
 
-def _print_connections(rows, enrich=None, total=None, aggregated=False):
+def _format_connections(rows, enrich=None, total=None, aggregated=False):
+    """Build the connection table as a list of lines (printed by the caller, so
+    the watch loop can redraw it in place)."""
     if aggregated and total is not None:
-        print(f"活动连接: {total} → {len(rows)} 组 (host+node)")
+        lines = [f"活动连接: {total} → {len(rows)} 组 (host+node)"]
     else:
-        print(f"活动连接: {len(rows)}")
+        lines = [f"活动连接: {len(rows)}"]
     if not rows:
-        return
+        return lines
     info = enrich or {}
 
     # (header, value-getter) for each column, built to match the active options.
@@ -723,14 +737,81 @@ def _print_connections(rows, enrich=None, total=None, aggregated=False):
     # Pad every column except the last (RULE) to its widest value.
     widths = [max([len(get(r)) for r in rows] + [len(head)]) for head, get in cols[:-1]]
 
-    def render(values):
+    def fmt(values):
         padded = [f"{v:<{w}}" for v, w in zip(values[:-1], widths, strict=True)]
         padded.append(values[-1])
-        print("  ".join(padded))
+        return "  ".join(padded)
 
-    render([head for head, _ in cols])
-    for row in rows:
-        render([get(row) for _, get in cols])
+    lines.append(fmt([head for head, _ in cols]))
+    lines.extend(fmt([get(row) for _, get in cols]) for row in rows)
+    return lines
+
+
+def _watch_connections(render, interval):
+    """Refresh `render()` (a callable returning the table lines) every `interval`
+    seconds, top-style: redraws in place (no full-screen clear → no flicker) and
+    quits on 'q' or Ctrl-C. os._exit avoids joining --whois worker threads that may
+    still be in a `whois`/`dig` subprocess (joining them is what made Ctrl-C hang);
+    the terminal (cooked mode + cursor) is restored first. Non-TTY stdin (piped)
+    falls back to a plain reprint loop with Ctrl-C only."""
+    import select
+
+    interactive = sys.stdin.isatty()
+    old_term = None
+    fd = -1
+    if interactive:
+        try:
+            import termios
+
+            fd = sys.stdin.fileno()
+            old_term = termios.tcgetattr(fd)
+        except Exception:  # noqa: BLE001 - no termios (e.g. Windows) -> Ctrl-C only
+            interactive = False
+
+    def restore():
+        if interactive:
+            sys.stdout.write("\033[?25h")  # show cursor again
+            sys.stdout.flush()
+        if old_term is not None:
+            import termios
+
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_term)
+
+    def quit_now(*_):
+        restore()
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, quit_now)
+    try:
+        if interactive:
+            import tty
+
+            tty.setcbreak(fd)
+            sys.stdout.write("\033[2J\033[?25l")  # clear once, hide cursor
+        while True:
+            lines = render()
+            if not interactive:
+                print("\n".join(lines))
+                time.sleep(interval)
+                continue
+            # Home, rewrite each line clearing to its end (\033[K), then clear any
+            # leftover rows below from a previous, longer frame (\033[J).
+            frame = (
+                "\033[H"
+                + "".join(f"{line}\033[K\n" for line in (*lines, "", "(q 退出)"))
+                + "\033[J"
+            )
+            sys.stdout.write(frame)
+            sys.stdout.flush()
+            ready, _, _ = select.select([sys.stdin], [], [], interval)
+            if ready:
+                ch = sys.stdin.read(1)
+                # "" means EOF (terminal detached / closed) — quit instead of
+                # busy-looping, since select would keep reporting stdin readable.
+                if not ch or ch in ("q", "Q"):
+                    return 0
+    finally:
+        restore()
 
 
 def cmd_connections(argv):
@@ -758,7 +839,7 @@ def cmd_connections(argv):
         type=float,
         default=None,
         metavar="SECONDS",
-        help="实时刷新 (默认每 2 秒), Ctrl-C 退出",
+        help="实时刷新 (默认每 2 秒), 按 q 或 Ctrl-C 退出",
     )
     args = p.parse_args(argv)
 
@@ -768,24 +849,19 @@ def cmd_connections(argv):
         print(f"✗ {e}", file=sys.stderr)
         return 1
     controller = ClashController(clash_cfg)
+    enrich_cache: dict[str, tuple[str, str]] = {}
 
-    def snapshot():
+    def render_lines():
         raw_rows = summarize_connections(controller.get_connections())
         rows = raw_rows if args.raw else aggregate_connections(raw_rows)
-        enrich = _enrich_targets({_connection_target(r) for r in rows}) if args.whois else None
-        _print_connections(rows, enrich, total=len(raw_rows), aggregated=not args.raw)
+        targets = {_connection_target(r) for r in rows}
+        enrich = _enrich_targets(targets, enrich_cache) if args.whois else None
+        return _format_connections(rows, enrich, total=len(raw_rows), aggregated=not args.raw)
 
     if args.watch is None:
-        snapshot()
+        print("\n".join(render_lines()))
         return 0
-
-    try:
-        while True:
-            print("\033[2J\033[H", end="")  # clear screen, cursor home
-            snapshot()
-            time.sleep(args.watch)
-    except KeyboardInterrupt:
-        return 0
+    return _watch_connections(render_lines, args.watch)
 
 
 def cmd_service(argv):

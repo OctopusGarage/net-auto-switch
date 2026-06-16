@@ -309,11 +309,14 @@ proxies:
     )
 
     config = tmp_path / "config.toml"
+    # Escape backslashes so a Windows tmp path (C:\...) is a valid TOML string
+    # (a bare "\U..." is read as a unicode escape). Round-trips to str(profiles_yaml).
+    profiles_yaml_toml = str(profiles_yaml).replace("\\", "\\\\")
     config.write_text(
         f"""
 [clash]
 secret = "abc"
-profiles_yaml = "{profiles_yaml}"
+profiles_yaml = "{profiles_yaml_toml}"
 """,
         encoding="utf-8",
     )
@@ -557,6 +560,25 @@ def test_cmd_connections_raw_lists_each(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "CONNS" not in out
     assert out.count("api.telegram.org") == 3  # one line per connection
+
+
+def test_enrich_targets_does_not_cache_failures(monkeypatch):
+    # A transient empty/failed lookup must stay uncached so a later tick retries it,
+    # rather than pinning a permanent blank for the whole watch session.
+    n = {"calls": 0}
+
+    def flaky_lookup(target, server, authoritative, use_doh):
+        n["calls"] += 1
+        if n["calls"] == 1:
+            return []  # first attempt fails (e.g. DoH blip)
+        return [whois.LookupResult(target=target, ip="1.2.3.4", operator="ACME", country="US")]
+
+    monkeypatch.setattr(whois, "lookup", flaky_lookup)
+    cache = {}
+    cli._enrich_targets({"a.com"}, cache)
+    assert "a.com" not in cache  # failure not cached
+    cli._enrich_targets({"a.com"}, cache)  # retried on the next tick
+    assert cache["a.com"] == ("1.2.3.4", "ACME (US)")
 
 
 def test_cmd_connections_empty(tmp_path, monkeypatch, capsys):
