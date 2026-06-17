@@ -1090,6 +1090,39 @@ def cmd_service(argv):
     return 0 if ok else 1
 
 
+def cmd_blacklist(argv):
+    """List or clear the learned exit-blacklist."""
+    import json
+
+    p = argparse.ArgumentParser(prog="net-auto-switch blacklist")
+    p.add_argument("action", choices=["list", "clear"])
+    p.add_argument("--config", default=None)
+    args = p.parse_args(argv)
+    try:
+        clash_cfg = _resolve_whois_clash_config(args.config)
+    except ConfigError as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 1
+    path = os.path.join(clash_cfg.state_dir or os.getcwd(), "blacklist.json")
+    if args.action == "clear":
+        if os.path.exists(path):
+            os.remove(path)
+        print("✓ 已清空学习型黑名单")
+        return 0
+    try:
+        data = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        data = {}
+    if not data:
+        print("(学习型黑名单为空)")
+        return 0
+    now = time.time()
+    print(f"学习型黑名单 ({len(data)}):")
+    for name, ts in sorted(data.items(), key=lambda kv: kv[1]):
+        print(f"  {name}  ({(now - float(ts)) / 86400:.1f} 天前)")
+    return 0
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "init":
@@ -1104,6 +1137,8 @@ def main(argv=None):
         sys.exit(cmd_nodes(argv[1:]))
     if argv and argv[0] == "service":
         sys.exit(cmd_service(argv[1:]))
+    if argv and argv[0] == "blacklist":
+        sys.exit(cmd_blacklist(argv[1:]))
 
     parser = argparse.ArgumentParser(description="net-auto-switch")
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")

@@ -756,3 +756,18 @@ def test_enrich_targets_silent_without_progress(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_whois_concurrent", lambda items, *a, **k: ((t, _F()) for t in items))
     cli._enrich_targets(["a.com"], {})  # progress defaults False
     assert capsys.readouterr().err == ""
+
+
+def test_cmd_blacklist_list_and_clear(tmp_path, monkeypatch, capsys):
+    from net_auto_switch import blacklist as bl
+    from net_auto_switch import cli
+    from net_auto_switch.config import ClashConfig
+
+    bl.record_learned(str(tmp_path / "blacklist.json"), "JP-bad", now=1e9)
+    monkeypatch.setattr(
+        cli, "_resolve_whois_clash_config", lambda c: ClashConfig(state_dir=str(tmp_path))
+    )
+    assert cli.cmd_blacklist(["list"]) == 0
+    assert "JP-bad" in capsys.readouterr().out
+    assert cli.cmd_blacklist(["clear"]) == 0
+    assert not (tmp_path / "blacklist.json").exists()
