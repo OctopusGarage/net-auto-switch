@@ -243,7 +243,7 @@ def test_run_cycle_notifies_on_switch_when_enabled():
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "switch_proxy"),
-        mock.patch.object(c, "get_exit_operator", return_value="AWS (US)"),
+        mock.patch.object(c, "query_exit", return_value=("US", "AWS")),
         mock.patch("net_auto_switch.notify.send") as send,
     ):
         c.run_cycle(dry_run=False)
@@ -268,7 +268,7 @@ def test_run_cycle_does_not_notify_when_disabled():
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "switch_proxy"),
-        mock.patch.object(c, "get_exit_operator", return_value="AWS (US)"),
+        mock.patch.object(c, "query_exit", return_value=("US", "AWS")),
         mock.patch("net_auto_switch.notify.send") as send,
     ):
         c.run_cycle(dry_run=False)
@@ -336,7 +336,7 @@ def test_run_cycle_dry_run_does_not_probe_exit_operator():
             "test_all_delays",
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
-        mock.patch.object(c, "get_exit_operator") as op,
+        mock.patch.object(c, "query_exit") as op,
     ):
         c.run_cycle(dry_run=True)
     op.assert_not_called()
@@ -414,7 +414,7 @@ def test_run_cycle_switches_resolved_managed_group():
             return_value={"JP Tokyo dead": 9999, "JP Tokyo good": 100},
         ),
         mock.patch.object(c, "switch_proxy") as switch,
-        mock.patch.object(c, "get_exit_operator", return_value="AWS (US)") as op,
+        mock.patch.object(c, "query_exit", return_value=("US", "AWS")) as op,
     ):
         c.run_cycle(dry_run=False)
     switch.assert_called_once_with("JP Tokyo good", "Proxy")
@@ -558,3 +558,28 @@ def test_learned_blacklist_excludes(tmp_path):
     }
     g = c.get_all_nodes_by_group(proxies)
     assert g["JP"] == ["JP-ok 日本"]
+
+
+def test_run_cycle_learns_bad_exit_and_picks_next(tmp_path, monkeypatch):
+    c = make_ctrl(priority=["JP"], blacklist={"countries": ["CN"]}, state_dir=str(tmp_path))
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "stale"},
+        "stale": {"type": "Vmess"},
+        "JP-a 日本": {"type": "Vmess"},
+        "JP-b 日本": {"type": "Vmess"},
+    }
+    monkeypatch.setattr(c, "get_proxies", lambda: proxies)
+    monkeypatch.setattr(c, "get_mode", lambda: "global")
+    monkeypatch.setattr(c, "test_all_delays", lambda n: {x: 50 for x in n})
+    monkeypatch.setattr(c, "test_delay", lambda n: 9999)
+    switched = []
+    monkeypatch.setattr(c, "switch_proxy", lambda node, group: switched.append(node) or True)
+    monkeypatch.setattr(c, "get_exit_operator", lambda: "")
+    # first landed node exits in CN (bad), second is clean
+    exits = {"JP-a 日本": ("CN", "x"), "JP-b 日本": ("JP", "ok")}
+    monkeypatch.setattr(c, "query_exit", lambda: exits[switched[-1]])
+    c.run_cycle(dry_run=False)
+    assert switched[-1] == "JP-b 日本"  # moved off the CN-exit node
+    from net_auto_switch import blacklist as bl
+
+    assert "JP-a 日本" in bl.load_learned(str(tmp_path / "blacklist.json"), 7, 1e9)

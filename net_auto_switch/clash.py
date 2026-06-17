@@ -11,6 +11,7 @@ import requests
 log = logging.getLogger("net_auto_switch.clash")
 
 DEAD = 9999
+BLACKLIST_REPROBE_MAX = 5
 
 
 def exit_label_from_ipwhois(j):
@@ -247,6 +248,25 @@ class ClashController:
                 chain.append(country)
         return chain
 
+    def query_exit(self):
+        """Exit (country, operator) of the CURRENTLY selected node via ipwhois.
+        No switch. ('', '') on failure."""
+        try:
+            proxies_cfg = {
+                "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
+                "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
+            }
+            r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
+            return exit_label_from_ipwhois(r.json())
+        except Exception as e:
+            log.warning(f"Exit query error: {e}")
+            return "", ""
+
+    def exit_blacklisted(self, country, operator):
+        return self._bl.country_blacklisted(
+            country, self._bl_countries
+        ) or self._bl.operator_blacklisted(operator, self._bl_operators)
+
     def get_exit_operator(self):
         """Best-effort label for the egress IP's operator, via the local proxy.
 
@@ -256,17 +276,8 @@ class ClashController:
         so callers must only use it after a real switch (never in dry-run, see
         ADR-0003).
         """
-        try:
-            proxies_cfg = {
-                "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
-                "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
-            }
-            r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
-            country, operator = exit_label_from_ipwhois(r.json())
-            return f"{operator} ({country})" if country else operator
-        except Exception as e:
-            log.warning(f"Exit operator check error: {e}")
-            return ""
+        country, operator = self.query_exit()
+        return f"{operator} ({country})" if country else operator
 
     def probe_exit(self, node, group, retries=2):
         """Switch `group` to `node`, probe its exit IP via ipwhois, and return
@@ -491,13 +502,39 @@ end tell
                 log.info(f"[DRY-RUN] Would switch to {target}")
             elif self.switch_proxy(target, group):
                 self._switch_times.append(now)
-                operator = self.get_exit_operator()
-                log.info(f"Switched to {target}" + (f" (exit: {operator})" if operator else ""))
+                attempts = 0
+                while True:
+                    country, operator = self.query_exit()
+                    if not self.exit_blacklisted(country, operator):
+                        break
+                    log.info(f"{target} exit blacklisted ({operator} {country}); learning + next")
+                    self._bl.record_learned(self._learned_path, target, now, self._relearn_days)
+                    self._reload_learned(now=now)
+                    attempts += 1
+                    groups = self.get_all_nodes_by_group(proxies)
+                    bad_delays = {**delays, target: DEAD}
+                    should_switch, nxt = self.select_node(target, current_group, groups, bad_delays)
+                    if (
+                        not should_switch
+                        or not nxt
+                        or nxt == target
+                        or attempts >= BLACKLIST_REPROBE_MAX
+                        or len(self._switch_times) >= self.cfg.max_switch_per_min
+                    ):
+                        break
+                    if not self.switch_proxy(nxt, group):
+                        break
+                    self._switch_times.append(now)
+                    target = nxt
+                operator_label = f"{operator} ({country})" if country else operator
+                log.info(
+                    f"Switched to {target}" + (f" (exit: {operator_label})" if operator else "")
+                )
                 if self.notify:
                     from . import notify
 
                     notify.send(
-                        "🔀 代理节点已切换", target, f"出口: {operator}" if operator else ""
+                        "🔀 代理节点已切换", target, f"出口: {operator_label}" if operator else ""
                     )
             else:
                 log.error("Switch failed")
