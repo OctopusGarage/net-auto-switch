@@ -31,3 +31,11 @@ priority = ["SG", "JP", "US"]
 # Optional: enable city-level grouping + stickiness for specific countries.
 # [clash.cities]
 # JP = ["Tokyo", "Osaka"]
+
+# Optional: hard-exclude nodes whose entry/exit is in `countries` or whose
+# operator matches any string in `operators` (substring match against the whois
+# operator label). Empty/absent = feature disabled (current behaviour preserved).
+# [clash.blacklist]
+# countries = ["CN", "HK"]
+# operators = ["腾讯云", "阿里云", "华为云"]
+# relearn_days = 7                 # learned exit-blacklist entries expire after N days

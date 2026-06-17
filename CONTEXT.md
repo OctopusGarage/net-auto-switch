@@ -49,6 +49,15 @@ next country by `clash.priority` order.
 - Each layer's failure is isolated — one layer throwing never stops the other or kills the daemon.
 - Secrets live only in `config.toml` (gitignored), never in source.
 
+## Blacklist (opt-in, `[clash.blacklist]`)
+
+Hard-exclude proxy nodes based on geography or operator. Two tiers:
+
+- **Tier 1 — offline pre-filter (every cycle):** A node is removed from all candidate groups before the selection algorithm runs if its name-recognized country, or its entry-whois country, is in `blacklist.countries`; or if its entry operator label matches any `blacklist.operators` pattern; or if it appears in the learned exit-blacklist and has not yet expired.
+- **Tier 2 — learned exit-blacklist (post-switch only):** After a real switch, the exit's `(country, operator)` is probed (reusing the ADR-0012 probe). If the exit is in `blacklist.countries` or matches `blacklist.operators`, the node is recorded in a persisted `blacklist.json` (same directory as `config.toml`) with a timestamp. Entries expire after `relearn_days` days so a node is re-verified later. Tier 2 is skipped in dry-run (ADR-0003).
+
+Blacklisting only **removes candidates**; it never changes the four selection invariants. An all-blacklisted group is simply empty and the normal downgrade chain applies. An all-blacklisted node set behaves exactly like today's "no usable node" case.
+
 ## What this project does NOT own
 
 - **Clash Verge itself** — must already be running with its external controller enabled.
