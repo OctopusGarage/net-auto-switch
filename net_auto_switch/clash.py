@@ -124,8 +124,27 @@ class ClashController:
             self._country_res[code] = re.compile(rx, re.IGNORECASE)
         self._city_res = dict(geo_catalog.CITY_RES)
         self.trial_re = re.compile(cfg.trial)
+        from . import blacklist as _bl
+
+        self._bl = _bl
+        bl_cfg = cfg.blacklist or {}
+        self._bl_countries = list(bl_cfg.get("countries", []))
+        self._bl_operators = list(bl_cfg.get("operators", []))
+        self._relearn_days = int(bl_cfg.get("relearn_days", 7))
+        self._learned_path = os.path.join(cfg.state_dir or os.getcwd(), "blacklist.json")
+        self._learned = set()
+        self._reload_learned(now=time.time())
         self._switch_times = []
         self._profile_switch_times = []
+
+    def _reload_learned(self, now):
+        self._learned = self._bl.load_learned(self._learned_path, self._relearn_days, now)
+
+    def name_blacklisted(self, name):
+        if name in self._learned:
+            return True
+        loc = self.geo.locate_by_name(name, self._country_res, self._city_res)
+        return self._bl.country_blacklisted(loc.country, self._bl_countries)
 
     # ----- API -----
     def get_proxies(self):
@@ -206,6 +225,8 @@ class ClashController:
             if data["type"] in ("Selector", "URLTest", "Fallback"):
                 continue
             if self.trial_re.search(name):
+                continue
+            if self.name_blacklisted(name):
                 continue
             key = self.group_key(name)
             if key:

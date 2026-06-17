@@ -85,11 +85,13 @@ def test_summarize_connections_sorted_by_host_then_node():
     ]
 
 
-def make_ctrl(priority=None, cities=None, **kw):
+def make_ctrl(priority=None, cities=None, blacklist=None, state_dir="", **kw):
     cfg = ClashConfig(
         secret="x",
         priority=priority or ["SG", "JP"],
         cities=cities or {},
+        blacklist=blacklist if blacklist is not None else {},
+        state_dir=state_dir,
         **kw,
     )
     return ClashController(cfg)
@@ -525,3 +527,34 @@ def test_is_tun_enabled_false_on_error(monkeypatch):
     c = make_ctrl()
     monkeypatch.setattr(clash_mod.requests, "get", boom)
     assert c.is_tun_enabled() is False
+
+
+# ----- blacklist exclusion -----
+
+
+def test_name_blacklist_excludes_cn_hk():
+    c = make_ctrl(priority=["JP", "CN", "HK"], blacklist={"countries": ["CN", "HK"]})
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "x"},
+        "JP-1 日本": {"type": "Vmess"},
+        "CN-1 中国": {"type": "Vmess"},
+        "HK-1 香港": {"type": "Vmess"},
+    }
+    g = c.get_all_nodes_by_group(proxies)
+    assert g.get("JP") == ["JP-1 日本"]
+    assert "CN" not in g and "HK" not in g  # blacklisted countries excluded
+
+
+def test_learned_blacklist_excludes(tmp_path):
+    c = make_ctrl(priority=["JP"], blacklist={"countries": []}, state_dir=str(tmp_path))
+    from net_auto_switch import blacklist as bl
+
+    bl.record_learned(str(tmp_path / "blacklist.json"), "JP-bad 日本", now=1e9)
+    c._reload_learned(now=1e9)  # test hook to reload after writing the file
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "x"},
+        "JP-bad 日本": {"type": "Vmess"},
+        "JP-ok 日本": {"type": "Vmess"},
+    }
+    g = c.get_all_nodes_by_group(proxies)
+    assert g["JP"] == ["JP-ok 日本"]
