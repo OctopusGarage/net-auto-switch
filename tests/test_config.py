@@ -171,3 +171,23 @@ def test_legacy_group_priority_country_codes(tmp_path):
     p.write_text('secret = "x"\n[clash]\nregions = { JP = "(JP|日本)" }\ngroup_priority = ["JP"]\n')
     cfg = load_config(str(p))
     assert cfg.clash.priority == ["JP"]
+
+
+def test_blacklist_config_and_state_dir(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'secret = "x"\n[clash.blacklist]\n'
+        'countries = ["CN", "HK"]\noperators = ["腾讯云"]\nrelearn_days = 3\n'
+    )
+    cfg = load_config(str(p))
+    assert cfg.clash.blacklist["countries"] == ["CN", "HK"]
+    assert cfg.clash.blacklist["operators"] == ["腾讯云"]
+    assert cfg.clash.blacklist["relearn_days"] == 3
+    assert cfg.clash.state_dir == str(tmp_path)
+
+
+def test_blacklist_defaults_empty():
+    from net_auto_switch.config import ClashConfig
+
+    c = ClashConfig()
+    assert c.blacklist == {} and c.state_dir == ""

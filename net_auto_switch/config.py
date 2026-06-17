@@ -62,6 +62,8 @@ class ClashConfig:
     priority: list = field(default_factory=lambda: list(DEFAULT_PRIORITY))
     cities: dict = field(default_factory=dict)
     region_overrides: dict = field(default_factory=dict)
+    blacklist: dict = field(default_factory=dict)
+    state_dir: str = ""
 
 
 @dataclass
@@ -142,6 +144,10 @@ def load_config(path=None):
                 priority.append(code)
         if priority:
             clash.priority = priority
+
+    if "blacklist" in raw_clash:
+        clash.blacklist = dict(raw_clash["blacklist"])
+    clash.state_dir = os.path.dirname(os.path.abspath(resolved))
 
     cfg = Config(
         main_interval=data.get("main_interval", Config.main_interval),
