@@ -428,7 +428,7 @@ class ClashController:
         try:
             import yaml
 
-            with open(os.path.expanduser(self.cfg.profiles_yaml)) as f:
+            with open(os.path.expanduser(self.cfg.profiles_yaml), encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             items = data.get("items", [])
             profiles = [p for p in items if p.get("type") == "remote"]

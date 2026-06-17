@@ -26,5 +26,6 @@ def test_learned_load_record_and_expiry(tmp_path):
     assert bl.load_learned(p, relearn_days=7, now=later) == set()
     # recording prunes expired entries on write
     bl.record_learned(p, "JP-fresh", now=later)
-    data = json.load(open(p))
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
     assert "JP-bad" not in data and "JP-fresh" in data

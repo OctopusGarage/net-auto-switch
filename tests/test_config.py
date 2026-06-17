@@ -168,7 +168,10 @@ def test_legacy_group_priority_maps_to_priority(tmp_path):
 
 def test_legacy_group_priority_country_codes(tmp_path):
     p = tmp_path / "config.toml"
-    p.write_text('secret = "x"\n[clash]\nregions = { JP = "(JP|日本)" }\ngroup_priority = ["JP"]\n')
+    p.write_text(
+        'secret = "x"\n[clash]\nregions = { JP = "(JP|日本)" }\ngroup_priority = ["JP"]\n',
+        encoding="utf-8",
+    )
     cfg = load_config(str(p))
     assert cfg.clash.priority == ["JP"]
 
@@ -177,7 +180,8 @@ def test_blacklist_config_and_state_dir(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text(
         'secret = "x"\n[clash.blacklist]\n'
-        'countries = ["CN", "HK"]\noperators = ["腾讯云"]\nrelearn_days = 3\n'
+        'countries = ["CN", "HK"]\noperators = ["腾讯云"]\nrelearn_days = 3\n',
+        encoding="utf-8",
     )
     cfg = load_config(str(p))
     assert cfg.clash.blacklist["countries"] == ["CN", "HK"]

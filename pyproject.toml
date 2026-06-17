@@ -64,7 +64,13 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B"]
+# PLW1514 (unspecified-encoding) is preview-only; explicit-preview-rules keeps it
+# the ONLY preview rule active. It blocks open()/read_text()/write_text() without
+# an explicit encoding — those default to the platform locale (cp1252 on Windows),
+# which breaks on our CJK content and only fails in the Windows CI job.
+preview = true
+explicit-preview-rules = true
+select = ["E", "F", "W", "I", "UP", "B", "PLW1514"]
 
 [tool.ruff.lint.per-file-ignores]
 # clash.py embeds an AppleScript UI-automation script whose selector chains are
