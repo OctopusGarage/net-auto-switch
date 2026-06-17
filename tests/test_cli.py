@@ -723,3 +723,36 @@ def test_node_note_entry_only():
 
     assert "入口" in _node_note("AE", "NL", "", with_exit=False)
     assert _node_note("JP", "JP", "", with_exit=False) == ""
+
+
+def test_enrich_targets_prints_progress(monkeypatch, capsys):
+    from net_auto_switch import cli, whois
+
+    class _F:
+        def __init__(self, res):
+            self._res = res
+
+        def result(self):
+            return self._res
+
+    def fake_concurrent(items, *a, **k):
+        for t in items:
+            yield t, _F([whois.LookupResult(target=t, ip="1.1.1.1", operator="AWS", country="US")])
+
+    monkeypatch.setattr(cli, "_whois_concurrent", fake_concurrent)
+    cache = cli._enrich_targets(["a.com", "b.com"], {}, progress=True)
+    err = capsys.readouterr().err
+    assert "[1/2]" in err and "[2/2]" in err  # per-target progress to stderr
+    assert cache["a.com"][1].startswith("AWS")
+
+
+def test_enrich_targets_silent_without_progress(monkeypatch, capsys):
+    from net_auto_switch import cli, whois
+
+    class _F:
+        def result(self):
+            return [whois.LookupResult(target="x", ip="1.1.1.1", operator="AWS", country="US")]
+
+    monkeypatch.setattr(cli, "_whois_concurrent", lambda items, *a, **k: ((t, _F()) for t in items))
+    cli._enrich_targets(["a.com"], {})  # progress defaults False
+    assert capsys.readouterr().err == ""

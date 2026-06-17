@@ -711,10 +711,14 @@ def _connection_target(row):
     return row.dest_ip or row.host
 
 
-def _enrich_targets(targets, cache=None):
+def _enrich_targets(targets, cache=None, progress=False):
     """Resolve + label each target concurrently, reusing the whois machinery.
     A target is a destination IP (whois'd directly) or a domain (DoH-resolved
     then whois'd). Returns {target: (resolved_ip, "Operator (CC)")}.
+
+    With `progress=True`, per-target `[i/N]` lines go to stderr as each lookup
+    completes — DoH+whois is slow, and without it a one-shot `--whois` run looks
+    frozen. The watch loop leaves it off (its redraw is the feedback).
 
     Successful results are memoised in `cache` — operator/IP don't change over a
     session, so a watch loop resolves each target once instead of every tick.
@@ -725,7 +729,12 @@ def _enrich_targets(targets, cache=None):
     todo = [t for t in targets if t and t not in cache]
     if not todo:
         return cache
-    for target, future in _whois_concurrent(todo, "1.1.1.1", False, True):
+    total = len(todo)
+    if progress:
+        print(f"解析 {total} 个目标的运营商 (whois, 较慢)…", file=sys.stderr)
+    for done, (target, future) in enumerate(_whois_concurrent(todo, "1.1.1.1", False, True), 1):
+        if progress:
+            print(f"  [{done}/{total}] {target}", file=sys.stderr)
         try:
             results = future.result()
         except Exception:  # noqa: BLE001 - transient failure: stay uncached so it retries
@@ -876,15 +885,15 @@ def cmd_connections(argv):
     controller = ClashController(clash_cfg)
     enrich_cache: dict[str, tuple[str, str]] = {}
 
-    def render_lines():
+    def render_lines(progress=False):
         raw_rows = summarize_connections(controller.get_connections())
         rows = raw_rows if args.raw else aggregate_connections(raw_rows)
         targets = {_connection_target(r) for r in rows}
-        enrich = _enrich_targets(targets, enrich_cache) if args.whois else None
+        enrich = _enrich_targets(targets, enrich_cache, progress) if args.whois else None
         return _format_connections(rows, enrich, total=len(raw_rows), aggregated=not args.raw)
 
     if args.watch is None:
-        print("\n".join(render_lines()))
+        print("\n".join(render_lines(progress=True)))  # one-shot: show whois progress
         return 0
     return _watch_connections(render_lines, args.watch)
 
