@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from net_auto_switch import cli, whois
+from net_auto_switch import cli, nodes_src, whois
 
 
 def _make_install(tmp_path, *, git=False, like_install=True):
@@ -378,6 +378,7 @@ profiles_yaml = "{profiles_yaml_toml}"
         ]
 
     monkeypatch.setattr(cli, "ClashController", FakeClashController)
+    monkeypatch.setattr(nodes_src, "ClashController", FakeClashController)
     monkeypatch.setattr(whois, "lookup", fake_lookup)
 
     assert cli.cmd_whois(["--config", str(config)]) == 0
@@ -447,16 +448,14 @@ proxies:
             profiles_yaml=str(profiles_yaml),
         ),
     )
-    monkeypatch.setattr(
-        cli,
-        "ClashController",
-        lambda cfg: mock.Mock(
-            get_proxies=lambda: {
-                "Proxy": {"type": "Selector", "all": ["Node A"]},
-                "Node A": {"type": "Vmess"},
-            }
-        ),
+    _fake_ctrl = lambda cfg: mock.Mock(  # noqa: E731
+        get_proxies=lambda: {
+            "Proxy": {"type": "Selector", "all": ["Node A"]},
+            "Node A": {"type": "Vmess"},
+        }
     )
+    monkeypatch.setattr(cli, "ClashController", _fake_ctrl)
+    monkeypatch.setattr(nodes_src, "ClashController", _fake_ctrl)
     monkeypatch.setattr(
         whois,
         "lookup",
