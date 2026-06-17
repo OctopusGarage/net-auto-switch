@@ -4,8 +4,8 @@ Extracted from cli.py so the daemon can reuse the loader functions
 without depending on the CLI layer.
 
 NOTE: ClashController is imported at module level here so tests can monkeypatch
-`nodes_src.ClashController`. When Task 7 adds a clash→nodes_src import, this
-will need to become a lazy (inside-function) import to break the cycle.
+`nodes_src.ClashController`. clash.py imports nodes_src lazily (inside
+`_server_map`), so this eager import is safe — there is no import cycle.
 """
 
 from __future__ import annotations

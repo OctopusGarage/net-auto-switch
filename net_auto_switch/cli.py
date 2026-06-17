@@ -954,7 +954,8 @@ def cmd_blacklist(argv):
         print("✓ 已清空学习型黑名单")
         return 0
     try:
-        data = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
     except Exception:
         data = {}
     if not data:

@@ -134,7 +134,8 @@ class ClashController:
         self._relearn_days = int(bl_cfg.get("relearn_days", 7))
         self._learned_path = os.path.join(cfg.state_dir or os.getcwd(), "blacklist.json")
         self._learned = set()
-        self._reload_learned(now=time.time())
+        if self._bl_countries or self._bl_operators:
+            self._reload_learned(now=time.time())
         self._entry_cache: dict = {}
         self._servers = None
         self._switch_times = []
@@ -473,6 +474,8 @@ end tell
     # ----- one full cycle -----
     def run_cycle(self, dry_run=False):
         """Run one Clash check/switch cycle. Returns True if a profile fallback occurred."""
+        if self._bl_countries or self._bl_operators:
+            self._reload_learned(now=time.time())
         proxies = self.get_proxies()
         log.info(f"Total proxies detected: {len(proxies)}")
 
@@ -567,6 +570,9 @@ end tell
                         break
                     self._switch_times.append(now)
                     target = nxt
+                    current_group = next(
+                        (k for k in self.derived_chain() if target in groups.get(k, [])), None
+                    ) or self.group_key(target)
                 operator_label = f"{operator} ({country})" if country else operator
                 log.info(
                     f"Switched to {target}" + (f" (exit: {operator_label})" if operator else "")

@@ -582,6 +582,23 @@ def test_entry_blacklist_excludes_chinese_cloud(monkeypatch):
     assert g["JP"] == ["JP-2 日本"]  # JP-1 excluded by entry operator
 
 
+def test_entry_blacklist_excludes_cn_country(monkeypatch):
+    c = make_ctrl(priority=["JP"], blacklist={"countries": ["CN"], "operators": []})
+    monkeypatch.setattr(c, "_server_of", lambda name: "relay" if name == "JP-1 日本" else "")
+    monkeypatch.setattr(
+        c,
+        "_entry_info",
+        lambda server: ("CN", "Some ISP") if server else ("", ""),
+    )
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "x"},
+        "JP-1 日本": {"type": "Vmess"},
+        "JP-2 日本": {"type": "Vmess"},
+    }
+    g = c.get_all_nodes_by_group(proxies)
+    assert g["JP"] == ["JP-2 日本"]  # JP-1 excluded by entry country CN
+
+
 def test_run_cycle_learns_bad_exit_and_picks_next(tmp_path, monkeypatch):
     c = make_ctrl(priority=["JP"], blacklist={"countries": ["CN"]}, state_dir=str(tmp_path))
     proxies = {
@@ -596,7 +613,6 @@ def test_run_cycle_learns_bad_exit_and_picks_next(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "test_delay", lambda n: 9999)
     switched = []
     monkeypatch.setattr(c, "switch_proxy", lambda node, group: switched.append(node) or True)
-    monkeypatch.setattr(c, "get_exit_operator", lambda: "")
     # first landed node exits in CN (bad), second is clean
     exits = {"JP-a 日本": ("CN", "x"), "JP-b 日本": ("JP", "ok")}
     monkeypatch.setattr(c, "query_exit", lambda: exits[switched[-1]])
