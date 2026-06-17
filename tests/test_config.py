@@ -151,7 +151,8 @@ def test_load_priority_and_cities(tmp_path):
         "[clash]\n"
         'priority = ["SG", "JP", "US"]\n'
         "[clash.cities]\n"
-        'JP = ["Tokyo", "Osaka"]\n'
+        'JP = ["Tokyo", "Osaka"]\n',
+        encoding="utf-8",
     )
     cfg = load_config(str(p))
     assert cfg.clash.priority == ["SG", "JP", "US"]
@@ -161,7 +162,9 @@ def test_load_priority_and_cities(tmp_path):
 def test_legacy_group_priority_maps_to_priority(tmp_path):
     # Real legacy configs use region names (incl. city-level), not country codes.
     p = tmp_path / "config.toml"
-    p.write_text('secret = "x"\n[clash]\ngroup_priority = ["SG", "Tokyo", "JP_Other"]\n')
+    p.write_text(
+        'secret = "x"\n[clash]\ngroup_priority = ["SG", "Tokyo", "JP_Other"]\n', encoding="utf-8"
+    )
     cfg = load_config(str(p))
     assert cfg.clash.priority == ["SG", "JP"]  # SG->SG, Tokyo->JP, JP_Other->JP, deduped
 

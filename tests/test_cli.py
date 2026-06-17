@@ -6,13 +6,13 @@ from net_auto_switch import cli, nodes_src, whois
 
 
 def _make_install(tmp_path, *, git=False, like_install=True):
-    (tmp_path / "config.toml").write_text("secret")
+    (tmp_path / "config.toml").write_text("secret", encoding="utf-8")
     (tmp_path / ".venv").mkdir()
     (tmp_path / "logs").mkdir()
     (tmp_path / "tests").mkdir()  # stale dev dir from a bloated install
-    (tmp_path / "SECURITY.md").write_text("x")  # stale dev file
+    (tmp_path / "SECURITY.md").write_text("x", encoding="utf-8")  # stale dev file
     if like_install:
-        (tmp_path / "pyproject.toml").write_text("x")
+        (tmp_path / "pyproject.toml").write_text("x", encoding="utf-8")
         (tmp_path / "net_auto_switch").mkdir()
     if git:
         (tmp_path / ".git").mkdir()

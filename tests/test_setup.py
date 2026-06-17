@@ -35,7 +35,8 @@ def test_parse_verge_runtime_defaults_when_absent():
 
 def test_detect_clash_verge_reads_dir(tmp_path):
     (tmp_path / "clash-verge.yaml").write_text(
-        "mixed-port: 7890\nexternal-controller: 127.0.0.1:9097\nsecret: abc\n"
+        "mixed-port: 7890\nexternal-controller: 127.0.0.1:9097\nsecret: abc\n",
+        encoding="utf-8",
     )
     det = detect_clash_verge(str(tmp_path))
     assert det is not None

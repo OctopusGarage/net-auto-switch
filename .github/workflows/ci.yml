@@ -32,6 +32,9 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
 
+      - name: Encoding check (Path.write_text/read_text need explicit encoding)
+        run: uv run python scripts/check_encoding.py $(git ls-files '*.py')
+
       - name: Format check (ruff)
         run: uv run ruff format --check .
 

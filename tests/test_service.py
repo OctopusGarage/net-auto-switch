@@ -44,7 +44,7 @@ def test_install_dispatch_linux_writes_unit_and_enables(tmp_path):
         ok = service.install("/opt/nas", "/opt/nas/config.toml")
     assert ok
     assert unit.exists()
-    assert "ExecStart=" in unit.read_text()
+    assert "ExecStart=" in unit.read_text(encoding="utf-8")
     cmds = [c.args[0] for c in calls.call_args_list]
     assert ["systemctl", "--user", "daemon-reload"] in cmds
     assert any(c[:3] == ["systemctl", "--user", "enable"] for c in cmds)
