@@ -560,6 +560,28 @@ def test_learned_blacklist_excludes(tmp_path):
     assert g["JP"] == ["JP-ok 日本"]
 
 
+def test_entry_blacklist_excludes_chinese_cloud(monkeypatch):
+    c = make_ctrl(priority=["JP"], blacklist={"countries": [], "operators": ["腾讯云"]})
+    # node JP-1 server resolves to a Tencent-cloud entry
+    monkeypatch.setattr(
+        c,
+        "_server_of",
+        lambda name: "relay.qcloud.com" if name == "JP-1 日本" else "",
+    )
+    monkeypatch.setattr(
+        c,
+        "_entry_info",
+        lambda server: ("CN", "腾讯云 Tencent Cloud") if server else ("", ""),
+    )
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "x"},
+        "JP-1 日本": {"type": "Vmess"},
+        "JP-2 日本": {"type": "Vmess"},
+    }
+    g = c.get_all_nodes_by_group(proxies)
+    assert g["JP"] == ["JP-2 日本"]  # JP-1 excluded by entry operator
+
+
 def test_run_cycle_learns_bad_exit_and_picks_next(tmp_path, monkeypatch):
     c = make_ctrl(priority=["JP"], blacklist={"countries": ["CN"]}, state_dir=str(tmp_path))
     proxies = {

@@ -135,6 +135,8 @@ class ClashController:
         self._learned_path = os.path.join(cfg.state_dir or os.getcwd(), "blacklist.json")
         self._learned = set()
         self._reload_learned(now=time.time())
+        self._entry_cache: dict = {}
+        self._servers = None
         self._switch_times = []
         self._profile_switch_times = []
 
@@ -146,6 +148,45 @@ class ClashController:
             return True
         loc = self.geo.locate_by_name(name, self._country_res, self._city_res)
         return self._bl.country_blacklisted(loc.country, self._bl_countries)
+
+    def _server_map(self):
+        if self._servers is None:
+            from . import nodes_src
+
+            try:
+                self._servers = nodes_src.node_servers(self.cfg)
+            except Exception:
+                self._servers = {}
+        return self._servers
+
+    def _server_of(self, name):
+        return self._server_map().get(name, "")
+
+    def _entry_info(self, server):
+        if not server:
+            return "", ""
+        if server in self._entry_cache:
+            return self._entry_cache[server]
+        from . import whois
+
+        try:
+            res = whois.lookup(server, server="1.1.1.1", authoritative=False, use_doh=True)
+            info = (res[0].country or "", res[0].operator or "") if res else ("", "")
+        except Exception:
+            info = ("", "")
+        self._entry_cache[server] = info
+        return info
+
+    def entry_blacklisted(self, name):
+        if not (self._bl_countries or self._bl_operators):
+            return False
+        country, operator = self._entry_info(self._server_of(name))
+        return self._bl.country_blacklisted(
+            country, self._bl_countries
+        ) or self._bl.operator_blacklisted(operator, self._bl_operators)
+
+    def is_blacklisted(self, name):
+        return self.name_blacklisted(name) or self.entry_blacklisted(name)
 
     # ----- API -----
     def get_proxies(self):
@@ -227,7 +268,7 @@ class ClashController:
                 continue
             if self.trial_re.search(name):
                 continue
-            if self.name_blacklisted(name):
+            if self.is_blacklisted(name):
                 continue
             key = self.group_key(name)
             if key:
