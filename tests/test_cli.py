@@ -173,14 +173,43 @@ def test_cmd_init_region_prompt_reprompts_on_bad_input(tmp_path, monkeypatch):
     ctrl.get_proxies.return_value = {"JP-1": {"type": "Vmess"}}
     monkeypatch.setattr(cli, "ClashController", lambda cfg: ctrl)
     monkeypatch.setattr(cli, "detect_regions", lambda names: {"JP": 2, "SG": 1})
-    answers = iter(["nope", "JP"])  # invalid first → must re-prompt, then valid
+    monkeypatch.setattr(cli, "detect_cities", lambda names: {})
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)  # force interactive prompts
+    answers = iter(["nope", "1"])  # non-numeric first → re-prompt, then index 1 → JP
     monkeypatch.setattr("builtins.input", lambda *a: next(answers))
 
     out = tmp_path / "config.toml"
     assert cli.cmd_init(["--no-service", "--config", str(out)]) == 0
     cfg = cli.load_config(str(out))
-    assert cfg.clash.group_priority == ["JP"]
-    assert list(cfg.clash.regions) == ["JP"]
+    assert cfg.clash.priority == ["JP"]
+
+
+def test_cmd_init_country_then_city_priority(tmp_path, monkeypatch):
+    from net_auto_switch.setup import DetectedClash
+
+    det = DetectedClash(
+        api="http://127.0.0.1:9097", secret="abc", proxy_port=7890, profiles_yaml="p.yaml"
+    )
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    monkeypatch.setattr(cli, "detect_clash_verge", lambda: det)
+    monkeypatch.setattr(cli, "probe_api", lambda a, s: "1.0")
+    monkeypatch.setattr(cli, "health_check", lambda a, s: (5, 5))
+    monkeypatch.setattr(cli, "read_subscriptions", lambda p: [])
+    ctrl = mock.Mock()
+    ctrl.get_proxies.return_value = {"JP-1": {"type": "Vmess"}}
+    monkeypatch.setattr(cli, "ClashController", lambda cfg: ctrl)
+    monkeypatch.setattr(cli, "detect_regions", lambda names: {"JP": 2, "US": 1})
+    monkeypatch.setattr(cli, "detect_cities", lambda names: {"JP": {"Tokyo": 1, "Osaka": 1}})
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    # countries "1 2" → JP,US; JP has cities → "1" → Tokyo; US has no cities → skipped
+    answers = iter(["1 2", "1"])
+    monkeypatch.setattr("builtins.input", lambda *a: next(answers))
+
+    out = tmp_path / "config.toml"
+    assert cli.cmd_init(["--no-service", "--config", str(out)]) == 0
+    cfg = cli.load_config(str(out))
+    assert cfg.clash.priority == ["JP", "US"]
+    assert cfg.clash.cities == {"JP": ["Tokyo"]}
 
 
 def test_cmd_init_aborts_when_no_reachable_nodes(tmp_path, monkeypatch):
@@ -666,3 +695,31 @@ def test_cmd_connections_whois_resolves_proxied_domain(tmp_path, monkeypatch, ca
     assert seen["target"] == "api.anthropic.com"  # resolved by domain, not by IP
     assert "160.79.104.10" in out  # the resolved IP is shown
     assert "Cloudflare (US)" in out
+
+
+def test_format_nodes_columns():
+    from net_auto_switch.cli import _format_nodes
+
+    rows = [{"name": "JP-1", "region": "JP/Tokyo", "entry": "AWS (JP)"}]
+    out = "\n".join(_format_nodes("=== t ===", rows, with_exit=False))
+    assert "REGION" in out and "ENTRY" in out and "EXIT" not in out
+    assert "JP/Tokyo" in out
+
+    rows2 = [{"name": "JP-1", "region": "JP/Tokyo", "entry": "AWS (JP)", "exit": "GCP (US)"}]
+    out2 = "\n".join(_format_nodes("=== t ===", rows2, with_exit=True))
+    assert "EXIT" in out2 and "GCP (US)" in out2
+
+
+def test_node_note_relay_and_name_match():
+    from net_auto_switch.cli import _node_note
+
+    assert _node_note("AE", "NL", "AE", with_exit=True) == "中转 NL→AE 名实相符"
+    assert "名实不符" in _node_note("US", "NL", "AE", with_exit=True)
+    assert _node_note("JP", "JP", "JP", with_exit=True) == "名实相符"
+
+
+def test_node_note_entry_only():
+    from net_auto_switch.cli import _node_note
+
+    assert "入口" in _node_note("AE", "NL", "", with_exit=False)
+    assert _node_note("JP", "JP", "", with_exit=False) == ""

@@ -57,17 +57,16 @@ def test_render_config_toml_roundtrips(tmp_path):
         profiles_yaml="/some/profiles.yaml",
     )
     out = tmp_path / "config.toml"
-    out.write_text(render_config_toml(det, ["SG", "Tokyo"]), encoding="utf-8")
+    out.write_text(render_config_toml(det, ["SG", "JP"]), encoding="utf-8")
 
     cfg = load_config(str(out))
     assert cfg.clash.api == "http://127.0.0.1:9097"
     assert cfg.clash.secret == "my secret"
     assert cfg.clash.proxy_port == 7890
     assert cfg.clash.profiles_yaml == "/some/profiles.yaml"
-    assert cfg.clash.group_priority == ["SG", "Tokyo"]
+    assert cfg.clash.priority == ["SG", "JP"]
     # defaults preserved for untouched sections
     assert cfg.wifi.enabled is True
-    assert cfg.clash.regions["Tokyo"] == "(Tokyo|东京)"
 
 
 def test_detect_regions_counts_and_orders():
@@ -77,7 +76,25 @@ def test_detect_regions_counts_and_orders():
     assert d["US"] == 1
     assert d["SG"] == 1
     assert list(d)[0] == "JP"  # sorted by count, desc
-    assert "Tokyo" not in d  # no Tokyo-named node
+
+
+def test_render_emits_priority_and_cities(tmp_path):
+    d = DetectedClash(api="http://127.0.0.1:9097", secret="s", proxy_port=7890, profiles_yaml="/p")
+    out = render_config_toml(d, ["SG", "JP"], cities={"JP": ["Tokyo"]})
+    path = tmp_path / "config.toml"
+    path.write_text(out, encoding="utf-8")
+    cfg = load_config(str(path))
+    assert cfg.clash.priority == ["SG", "JP"]
+    assert cfg.clash.cities == {"JP": ["Tokyo"]}
+    assert "[clash.regions]" not in out
+    assert "group_priority" not in out
+
+
+def test_detect_regions_uses_country_codes():
+    names = ["US-LA 美国", "JP-1 日本", "JP-2 日本", "SG 新加坡", "random"]
+    d = detect_regions(names)
+    assert d["JP"] == 2 and d["US"] == 1 and d["SG"] == 1
+    assert list(d)[0] == "JP"
 
 
 def test_parse_subscriptions():
@@ -141,14 +158,34 @@ def test_clash_verge_diagnosis_states(tmp_path):
     assert "no clash-verge.yaml" in msg
 
 
-def test_render_config_toml_custom_regions(tmp_path):
+def test_render_config_toml_with_cities(tmp_path):
     det = DetectedClash(
         api="http://127.0.0.1:9097", secret="x", proxy_port=7890, profiles_yaml="/p.yaml"
     )
-    regions = {"US": r"(US|美国)", "JP": r"(JP|日本)"}
+    cities = {"JP": ["Tokyo", "Osaka"]}
     out = tmp_path / "config.toml"
-    out.write_text(render_config_toml(det, ["US", "JP"], regions), encoding="utf-8")
+    out.write_text(render_config_toml(det, ["US", "JP"], cities=cities), encoding="utf-8")
 
     cfg = load_config(str(out))
-    assert list(cfg.clash.regions) == ["US", "JP"]
-    assert cfg.clash.group_priority == ["US", "JP"]
+    assert cfg.clash.priority == ["US", "JP"]
+    assert cfg.clash.cities == {"JP": ["Tokyo", "Osaka"]}
+
+
+def test_parse_index_order():
+    from net_auto_switch.setup import parse_index_order
+
+    items = ["HK", "SG", "JP", "US"]
+    assert parse_index_order("1 3 4", items) == (["HK", "JP", "US"], [])
+    assert parse_index_order("2,2, 1", items) == (["SG", "HK"], [])  # dedupe, order kept
+    assert parse_index_order("9 x 1", items) == (["HK"], ["9", "x"])  # out-of-range / nonnum
+    assert parse_index_order("  ", items) == ([], [])  # empty -> caller defaults
+
+
+def test_detect_cities():
+    from net_auto_switch.setup import detect_cities
+
+    names = ["JP-Tokyo 东京 01", "JP Osaka 大阪", "Osaka-2 大阪", "US-LA 洛杉矶", "SG 新加坡", "x"]
+    d = detect_cities(names)
+    assert d["JP"] == {"Osaka": 2, "Tokyo": 1}  # sorted by count desc
+    assert d["US"] == {"Los Angeles": 1}
+    assert "SG" not in d  # no city detected

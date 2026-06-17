@@ -4,6 +4,15 @@ import sys
 import tomllib
 from dataclasses import dataclass, field
 
+from .geo import catalog as geo_catalog
+
+# Built-in fallback country priority when the user / wizard sets none.
+DEFAULT_PRIORITY = ["SG", "HK", "JP", "TW", "KR", "US", "GB", "DE"]
+
+# Legacy [clash] group_priority used region NAMES (incl. city-level Tokyo/JP_Other);
+# translate them to country codes when mapping an old config to the new `priority`.
+_LEGACY_REGION_TO_COUNTRY = {"Tokyo": "JP", "JP_Other": "JP"}
+
 
 class ConfigError(Exception):
     pass
@@ -33,19 +42,7 @@ class WifiConfig:
     interface: str = "en0"
 
 
-# Region name -> regex matched (case-insensitive) against node names. Order
-# matters: classification returns the first matching region, so list more
-# specific regions before broader ones. Fully configurable — define any regions
-# you like (US, HK, …); see docs/adr/0007.
-DEFAULT_REGIONS = {
-    "SG": r"(SG|Singapore|新加坡|🇸🇬)",
-    "Tokyo": r"(Tokyo|东京)",
-    "JP_Other": r"(JP|Japan|日本|🇯🇵)",
-}
 DEFAULT_TRIAL = r"试用"
-# Optional: when the `target` region has no nodes by name, probe the `source`
-# region's nodes and move those whose IP geolocates to `match` into `target`.
-DEFAULT_IP_ENRICH = {"target": "Tokyo", "source": "JP_Other", "match": "tokyo"}
 
 
 @dataclass
@@ -61,10 +58,10 @@ class ClashConfig:
     max_switch_per_min: int = 3
     max_profile_switch_per_30min: int = 1
     profiles_yaml: str = field(default_factory=_default_profiles_yaml)
-    group_priority: list = field(default_factory=lambda: ["SG", "Tokyo", "JP_Other"])
-    regions: dict = field(default_factory=lambda: dict(DEFAULT_REGIONS))
     trial: str = DEFAULT_TRIAL
-    ip_enrich: dict = field(default_factory=lambda: dict(DEFAULT_IP_ENRICH))
+    priority: list = field(default_factory=lambda: list(DEFAULT_PRIORITY))
+    cities: dict = field(default_factory=dict)
+    region_overrides: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -111,16 +108,40 @@ def load_config(path=None):
     patterns_data = clash_data.pop("patterns", None)
     regions_data = clash_data.pop("regions", None)
     clash = _from_dict(ClashConfig, clash_data)
-    if regions_data:
-        clash.regions = dict(regions_data)
-    elif patterns_data:
+    if not regions_data and patterns_data:
         # Backward compatibility: legacy [clash.patterns] (sg/jp/tokyo/trial).
-        clash.regions = {
-            "SG": patterns_data.get("sg", DEFAULT_REGIONS["SG"]),
-            "Tokyo": patterns_data.get("tokyo", DEFAULT_REGIONS["Tokyo"]),
-            "JP_Other": patterns_data.get("jp", DEFAULT_REGIONS["JP_Other"]),
-        }
+        overrides: dict[str, str] = {}
+        if "sg" in patterns_data:
+            overrides["SG"] = patterns_data["sg"]
+        if "tokyo" in patterns_data:
+            overrides["Tokyo"] = patterns_data["tokyo"]
+        if "jp" in patterns_data:
+            overrides["JP_Other"] = patterns_data["jp"]
+        if overrides:
+            clash.region_overrides = overrides
         clash.trial = patterns_data.get("trial", clash.trial)
+
+    raw_clash = data.get("clash", {})
+    if "cities" in raw_clash:
+        clash.cities = {k: list(v) for k, v in raw_clash["cities"].items()}
+    if regions_data:
+        clash.region_overrides = dict(regions_data)
+    if "priority" in raw_clash:
+        clash.priority = list(raw_clash["priority"])
+    elif "group_priority" in raw_clash:
+        seen: set[str] = set()
+        priority: list[str] = []
+        for entry in raw_clash["group_priority"]:
+            code = (
+                entry
+                if entry in geo_catalog.COUNTRY_TOKENS
+                else _LEGACY_REGION_TO_COUNTRY.get(entry)
+            )
+            if code and code not in seen:
+                seen.add(code)
+                priority.append(code)
+        if priority:
+            clash.priority = priority
 
     cfg = Config(
         main_interval=data.get("main_interval", Config.main_interval),
@@ -143,11 +164,14 @@ def _validate(cfg):
         raise ConfigError("clash.proxy_port out of range")
     if not cfg.clash.managed_group:
         raise ConfigError("clash.managed_group must be a non-empty group name")
-    if not cfg.clash.regions:
-        raise ConfigError("clash.regions must define at least one region")
-    for g in cfg.clash.group_priority:
-        if g not in cfg.clash.regions:
+    if not cfg.clash.priority:
+        raise ConfigError("clash.priority must list at least one country")
+    known = set(geo_catalog.COUNTRY_TOKENS) | set(cfg.clash.region_overrides)
+    for code in cfg.clash.priority:
+        if code not in known:
             raise ConfigError(
-                f"group_priority references undefined region '{g}' "
-                f"(defined: {list(cfg.clash.regions)})"
+                f"clash.priority references unknown country '{code}' (known: {sorted(known)})"
             )
+    for country in cfg.clash.cities:
+        if country not in cfg.clash.priority:
+            raise ConfigError(f"clash.cities country '{country}' is not in clash.priority")

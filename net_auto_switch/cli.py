@@ -15,15 +15,15 @@ from .clash import ClashController, aggregate_connections, summarize_connections
 from .config import ClashConfig, ConfigError, load_config
 from .orchestrator import Orchestrator
 from .setup import (
-    REGION_CATALOG,
     clash_verge_diagnosis,
+    detect_cities,
     detect_clash_verge,
     detect_regions,
     health_check,
+    parse_index_order,
     probe_api,
     read_subscriptions,
     render_config_toml,
-    resolve_priority,
 )
 
 log = logging.getLogger("net_auto_switch.cli")
@@ -189,6 +189,44 @@ def _confirm(prompt, default=True):
     return ans in ("y", "yes")
 
 
+def _print_numbered(labels):
+    for i, label in enumerate(labels, 1):
+        print(f"    {i}) {label}")
+
+
+def _prompt_priority(counts):
+    """Ask the user to order detected countries by typing indices. Returns the
+    ordered country codes; Enter (or only-invalid input) → all, count-sorted."""
+    items = list(counts)  # country codes, most-common first
+    print("  检测到订阅里的国家 (按节点数):")
+    _print_numbered([f"{cc} ({counts[cc]})" for cc in items])
+    prompt = "  优先顺序编号 (空格分隔, 例 1 3 4), 回车=按节点数: "
+    while True:
+        ans = input(prompt).strip()
+        if not ans:
+            return items
+        ordered, invalid = parse_index_order(ans, items)
+        if invalid:
+            print(f"  ✗ 无效编号: {', '.join(invalid)} (有效 1-{len(items)})")
+            continue
+        return ordered
+
+
+def _prompt_cities(country, city_counts):
+    """Ask whether to split `country` by its detected cities. Returns the ordered
+    city list (empty → no city grouping). Invalid indices are ignored."""
+    cities = list(city_counts)
+    print(f"  {country} 检测到城市:")
+    _print_numbered([f"{c} ({city_counts[c]})" for c in cities])
+    ans = input("  按优先输入编号 (回车=不按城市细分): ").strip()
+    if not ans:
+        return []
+    ordered, invalid = parse_index_order(ans, cities)
+    if invalid:
+        print(f"  ⚠ 忽略无效编号: {', '.join(invalid)}")
+    return ordered
+
+
 def cmd_init(argv):
     """Guided setup: auto-detect Clash Verge, write config.toml, optionally
     install the launchd service and start it."""
@@ -282,8 +320,8 @@ def cmd_init(argv):
                 "subscription → Edit → set 'Update Interval' (minutes)."
             )
 
-    group_priority = list(ClashConfig.__dataclass_fields__["group_priority"].default_factory())
-    regions = None
+    priority = list(ClashConfig.__dataclass_fields__["priority"].default_factory())
+    cities = {}
     try:
         ctrl = ClashController(
             ClashConfig(api=detected.api, secret=detected.secret, proxy_port=detected.proxy_port)
@@ -294,36 +332,23 @@ def cmd_init(argv):
             if d.get("type") not in ("Selector", "URLTest", "Fallback")
         ]
         counts = detect_regions(names)
+        ccounts = detect_cities(names)
         if counts:
-            print("  Regions found in your subscription:")
-            for name, c in counts.items():
-                print(f"    {name:8} x{c}")
-            valid = list(counts)  # detected region names, most-common first
-            chosen = valid
-            if not args.yes:
-                print(f"  Choose priority order from: {', '.join(valid)}")
-                while True:
-                    ans = input(
-                        "  Enter names comma-separated (e.g. JP,SG), or just Enter for all: "
-                    ).strip()
-                    if not ans:
-                        chosen = valid
-                        break
-                    resolved, invalid = resolve_priority(ans, valid)
-                    if invalid:
-                        print(f"  ✗ not in the list: {', '.join(invalid)} — pick from {valid}")
-                        continue
-                    if not resolved:
-                        print("  ✗ nothing recognized — try again, or press Enter for all")
-                        continue
-                    chosen = resolved
-                    break
-            # Build regions in catalog order (specific-first) for correct matching;
-            # group_priority keeps the user's chosen order for fallback.
-            regions = {n: REGION_CATALOG[n] for n in REGION_CATALOG if n in chosen}
-            group_priority = chosen
+            if args.yes or not sys.stdin.isatty():
+                priority = list(counts)  # non-interactive: all, count-sorted
+            else:
+                priority = _prompt_priority(counts)
+                for cc in priority:
+                    if cc in ccounts:
+                        picked = _prompt_cities(cc, ccounts[cc])
+                        if picked:
+                            cities[cc] = picked
+                summary = " > ".join(
+                    f"{cc}[{'/'.join(cities[cc])}]" if cc in cities else cc for cc in priority
+                )
+                print(f"  ✓ 优先级: {summary}")
     except Exception:
-        pass  # detection is best-effort; falls back to the default regions
+        cities = {}  # detection is best-effort; falls back to the default priority
 
     out = args.config
     if os.path.exists(out):
@@ -332,7 +357,7 @@ def cmd_init(argv):
         os.chmod(backup, 0o600)  # the config carries the Clash secret — owner-only
         print(f"• Backed up existing {out} -> {backup}")
     with open(out, "w", encoding="utf-8") as f:
-        f.write(render_config_toml(detected, group_priority, regions))
+        f.write(render_config_toml(detected, priority, cities=cities))
     os.chmod(out, 0o600)  # the config carries the Clash secret — owner-only
     print(f"✓ Wrote {out}")
 
@@ -864,6 +889,161 @@ def cmd_connections(argv):
     return _watch_connections(render_lines, args.watch)
 
 
+def _node_note(name_cc, entry_cc, exit_cc, with_exit):
+    """Pure: annotate the relationship between the name-recognized country, the
+    entry (relay) country, and the probed exit country.
+
+    With an exit probe: flags a relay (entry≠exit) and whether the name matches
+    the real exit (名实相符/不符). Without a probe we can't know the true exit, so
+    we only note when the entry country differs from the name (possible relay)."""
+    parts = []
+    if with_exit:
+        if entry_cc and exit_cc and entry_cc != exit_cc:
+            parts.append(f"中转 {entry_cc}→{exit_cc}")
+        if name_cc and exit_cc:
+            parts.append("名实相符" if name_cc == exit_cc else f"名实不符(名{name_cc}/实{exit_cc})")
+    elif name_cc and entry_cc and name_cc != entry_cc:
+        parts.append(f"入口在{entry_cc}(或为中转)")
+    return " ".join(parts)
+
+
+def _format_nodes(title, rows, with_exit):
+    """Build the node table as a list of lines. Pure. Each row is a dict with
+    name/region/entry/note (and exit when with_exit). REGION is the
+    name-recognized country[/city], ENTRY the whois operator(country) of the
+    node's server, NOTE the consistency annotation."""
+    lines = [title]
+    if not rows:
+        lines.append("(no nodes)")
+        return lines
+    cols = [
+        ("NAME", lambda r: r["name"]),
+        ("REGION", lambda r: r["region"]),
+        ("ENTRY", lambda r: r["entry"]),
+    ]
+    if with_exit:
+        cols.append(("EXIT", lambda r: r.get("exit", "")))
+    cols.append(("NOTE", lambda r: r.get("note", "")))
+    widths = [max([len(get(r)) for r in rows] + [len(head)]) for head, get in cols[:-1]]
+
+    def fmt(values):
+        padded = [f"{v:<{w}}" for v, w in zip(values[:-1], widths, strict=True)]
+        padded.append(values[-1])
+        return "  ".join(padded)
+
+    lines.append(fmt([head for head, _ in cols]))
+    lines.extend(fmt([get(row) for _, get in cols]) for row in rows)
+    return lines
+
+
+def cmd_nodes(argv):
+    """List proxy nodes with their recognized region + entry operator/country,
+    and (with --probe) their probed exit operator/country."""
+    from . import geo, whois
+
+    p = argparse.ArgumentParser(
+        prog="net-auto-switch nodes",
+        description="列出节点: 识别地区 + 入口运营商/国家; --probe 额外探测出口",
+    )
+    p.add_argument("--config", default=None, help="Path to config.toml")
+    p.add_argument(
+        "--probe",
+        action="store_true",
+        help="额外探测每个节点出口的国家/运营商 (慢, 会逐个切换节点, 结束后恢复原节点)",
+    )
+    p.add_argument("--limit", type=int, default=None, help="只处理前 N 个节点")
+    args = p.parse_args(argv)
+
+    try:
+        clash_cfg = _resolve_whois_clash_config(args.config)
+        profile = _load_clash_api_profile(clash_cfg)
+    except (ConfigError, WhoisProfileError) as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 1
+
+    nodes = profile["nodes"]
+    if args.limit is not None:
+        nodes = nodes[: max(0, args.limit)]
+
+    # ENTRY: whois each unique server concurrently (network-bound; progress to stderr).
+    servers = _unique_servers(nodes)
+    lookup_by_server = {}
+    total = len(servers)
+    done = 0
+    print(f"待解析 server 数 (去重后): {total}", file=sys.stderr)
+    for server, future in _whois_concurrent(servers, "1.1.1.1", False, True):
+        try:
+            lookup_by_server[server] = future.result()
+        except Exception:  # noqa: BLE001 - one bad server shouldn't abort the scan
+            lookup_by_server[server] = []
+        done += 1
+        print(f"[{done}/{total}] {server}", file=sys.stderr)
+
+    def entry_info(server):
+        """(country_code, 'Operator (CC)') for a node's server, ('', '解析失败') on miss."""
+        results = lookup_by_server.get(server) or []
+        if not results:
+            return "", "解析失败"
+        res = results[0]
+        return (res.country or ""), whois.format_operator(res.operator, res.country)
+
+    rows = []
+    for n in nodes:
+        name_cc = geo.locate_by_name(n["name"]).country or ""
+        entry_cc, entry = entry_info(n["server"])
+        rows.append(
+            {
+                "name": n["name"],
+                "region": geo.region_label(n["name"]),
+                "entry": entry,
+                "_name_cc": name_cc,
+                "_entry_cc": entry_cc,
+                "_exit_cc": "",
+            }
+        )
+
+    with_exit = args.probe
+    if args.probe:
+        controller = ClashController(clash_cfg)
+        try:
+            proxies = controller.get_proxies()
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 无法读取 Clash 节点, 跳过出口探测: {e}", file=sys.stderr)
+            proxies = {}
+        group = controller.resolve_managed_group(proxies) if proxies else None
+        if not group or group not in proxies:
+            print("⚠ 无法确定要管理的代理组, 跳过出口探测", file=sys.stderr)
+            with_exit = False
+        else:
+            if controller.is_tun_enabled():
+                print(
+                    "⚠ 检测到 TUN 模式开启:--probe 会逐个切换当前节点,"
+                    "在 TUN 下这会重路由【全部】系统流量(不只代理应用)。\n"
+                    "  建议先在 Clash Verge 关闭 TUN(虚拟网卡)再跑 —— 更稳, 也不会打断其它应用。",
+                    file=sys.stderr,
+                )
+            original = proxies[group].get("now")
+            print(
+                f"探测出口中 (会切换 '{group}', {len(nodes)} 个节点; 结束后恢复 '{original}')…",
+                file=sys.stderr,
+            )
+            for i, row in enumerate(rows):
+                country, operator = controller.probe_exit(nodes[i]["name"], group)
+                row["_exit_cc"] = country
+                row["exit"] = whois.format_operator(operator, country) if operator else "探测失败"
+                print(f"[{i + 1}/{len(rows)}] {nodes[i]['name']} -> {row['exit']}", file=sys.stderr)
+            if original:
+                controller.switch_proxy(original, group)
+                print(f"已恢复 '{group}' -> '{original}'", file=sys.stderr)
+
+    for row in rows:
+        row["note"] = _node_note(row["_name_cc"], row["_entry_cc"], row["_exit_cc"], with_exit)
+
+    title = f"=== [{profile['name']}] 节点数: {len(rows)} ==="
+    print("\n".join(_format_nodes(title, rows, with_exit)))
+    return 0
+
+
 def cmd_service(argv):
     """Install/uninstall/check the background service using the platform-native
     mechanism (launchd on macOS, systemd --user on Linux, Task Scheduler on Windows)."""
@@ -911,6 +1091,8 @@ def main(argv=None):
         sys.exit(cmd_whois(argv[1:]))
     if argv and argv[0] == "connections":
         sys.exit(cmd_connections(argv[1:]))
+    if argv and argv[0] == "nodes":
+        sys.exit(cmd_nodes(argv[1:]))
     if argv and argv[0] == "service":
         sys.exit(cmd_service(argv[1:]))
 

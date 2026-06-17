@@ -13,6 +13,21 @@ log = logging.getLogger("net_auto_switch.clash")
 DEAD = 9999
 
 
+def exit_label_from_ipwhois(j):
+    """Pure: parse an ipwhois.app JSON body into (country_code, operator).
+
+    Maps the isp/org blob through whois.OPERATOR_HINTS for a friendly operator
+    label (e.g. 'AWS'), falling back to the raw isp/org. Shared by the
+    post-switch exit-operator log and the `nodes --probe` exit column."""
+    from . import whois
+
+    isp = j.get("isp") or ""
+    org = j.get("org") or ""
+    operator = whois.match_operator(f"{isp} {org}") or isp or org or "unknown"
+    country = j.get("country_code") or ""
+    return country, operator
+
+
 @dataclass(frozen=True)
 class ConnectionRow:
     """One row of `get_connections()`, reduced to what a human cares about:
@@ -100,8 +115,14 @@ class ClashController:
         self.cfg = cfg
         self.notify = notify
         self.headers = {"Authorization": f"Bearer {cfg.secret}"}
-        # name -> compiled regex, in config order (first match wins).
-        self.region_res = {n: re.compile(rx, re.IGNORECASE) for n, rx in cfg.regions.items()}
+        from . import geo
+        from .geo import catalog as geo_catalog
+
+        self.geo = geo
+        self._country_res = dict(geo_catalog.COUNTRY_RES)
+        for code, rx in cfg.region_overrides.items():
+            self._country_res[code] = re.compile(rx, re.IGNORECASE)
+        self._city_res = dict(geo_catalog.CITY_RES)
         self.trial_re = re.compile(cfg.trial)
         self._switch_times = []
         self._profile_switch_times = []
@@ -133,6 +154,16 @@ class ClashController:
         )
         return r.status_code == 204
 
+    def is_tun_enabled(self):
+        """True if Clash TUN (virtual NIC) mode is on. Used to warn before an
+        exit probe, since switching the selected node under TUN reroutes ALL
+        system traffic, not just proxy-aware apps. False on any read failure."""
+        try:
+            r = requests.get(f"{self.cfg.api}/configs", headers=self.headers, timeout=5)
+            return bool((r.json().get("tun") or {}).get("enable"))
+        except Exception:
+            return False
+
     def get_mode(self):
         try:
             r = requests.get(f"{self.cfg.api}/configs", headers=self.headers, timeout=5)
@@ -158,90 +189,94 @@ class ClashController:
         return delays
 
     # ----- grouping -----
-    def classify_node(self, name):
-        for region, rx in self.region_res.items():
-            if rx.search(name):
-                return region
-        return None
+    def group_key(self, name):
+        loc = self.geo.locate_by_name(name, self._country_res, self._city_res)
+        if not loc.country:
+            return None
+        cities = self.cfg.cities.get(loc.country)
+        if not cities:
+            return loc.country
+        if loc.city and loc.city in cities:
+            return f"{loc.country}/{loc.city}"
+        return f"{loc.country}/_other"
 
     def get_all_nodes_by_group(self, proxies):
-        groups = {name: [] for name in self.region_res}
+        groups = {}
         for name, data in proxies.items():
             if data["type"] in ("Selector", "URLTest", "Fallback"):
                 continue
             if self.trial_re.search(name):
                 continue
-            group = self.classify_node(name)
-            if group and name not in groups[group]:
-                groups[group].append(name)
+            key = self.group_key(name)
+            if key:
+                groups.setdefault(key, [])
+                if name not in groups[key]:
+                    groups[key].append(name)
         return groups
 
-    def get_node_region(self, node_name, group):
-        try:
-            self.switch_proxy(node_name, group)
-            time.sleep(0.5)
-            proxies_cfg = {
-                "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
-                "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
-            }
-            r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
-            return r.json().get("region", "")
-        except Exception as e:
-            log.warning(f"Location check error: {e}")
-            return ""
+    def derived_chain(self):
+        chain = []
+        for country in self.cfg.priority:
+            cities = self.cfg.cities.get(country)
+            if cities:
+                for city in cities:
+                    chain.append(f"{country}/{city}")
+                chain.append(f"{country}/_other")
+            else:
+                chain.append(country)
+        return chain
 
     def get_exit_operator(self):
         """Best-effort label for the egress IP's operator, via the local proxy.
 
-        Reuses the ipwhois.app probe (same plumbing as get_node_region) and maps
+        Probes ipwhois.app via the local proxy and maps
         its isp/org through whois.OPERATOR_HINTS for a friendly label like
         'AWS (US)'. Returns '' on any failure. This is an IP-probe side effect,
         so callers must only use it after a real switch (never in dry-run, see
         ADR-0003).
         """
-        from . import whois
-
         try:
             proxies_cfg = {
                 "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
                 "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
             }
             r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
-            j = r.json()
-            isp = j.get("isp") or ""
-            org = j.get("org") or ""
-            operator = whois.match_operator(f"{isp} {org}") or isp or org or "unknown"
-            country = j.get("country_code") or ""
+            country, operator = exit_label_from_ipwhois(r.json())
             return f"{operator} ({country})" if country else operator
         except Exception as e:
             log.warning(f"Exit operator check error: {e}")
             return ""
 
-    def enrich_via_ip(self, groups, group):
-        """Reclassify `source` nodes whose IP geolocates to `match` into `target`.
+    def probe_exit(self, node, group, retries=2):
+        """Switch `group` to `node`, probe its exit IP via ipwhois, and return
+        (country_code, operator). ('', '') on failure. Side-effecting (switches
+        the proxy + hits the network), so only the explicit `nodes --probe` path
+        calls it — never dry-run (ADR-0003). Callers restore the original node.
 
-        Config-driven via cfg.ip_enrich; a no-op if it's unset or its regions
-        aren't present (e.g. a US-only setup with no Tokyo region). Probes by
-        temporarily pointing `group` (the managed group) at each candidate.
-        """
-        ie = self.cfg.ip_enrich or {}
-        target, source = ie.get("target"), ie.get("source")
-        match = (ie.get("match") or "").lower()
-        if not match or target not in groups or source not in groups:
-            return
-        candidates = groups[source]
-        if not candidates:
-            return
-        log.info(f"No {target} node by name, checking {source} via IP location...")
-        check_count = min(len(candidates), 10)
-        for i, node in enumerate(candidates[:check_count], 1):
-            log.info(f"  [{i}/{check_count}] Checking {node}...")
-            region = self.get_node_region(node, group)
-            if region and region.lower() == match:
-                log.info(f"  -> {node} is {target}")
-                groups[target].append(node)
-                groups[source].remove(node)
-            time.sleep(0.3)
+        The ipwhois request is retried up to `retries` times with backoff —
+        ipwhois.app intermittently drops the TLS connection, and a single retry
+        recovers most of those without re-switching the node."""
+        try:
+            self.switch_proxy(node, group)
+            time.sleep(0.5)
+            proxies_cfg = {
+                "http": f"http://127.0.0.1:{self.cfg.proxy_port}",
+                "https": f"http://127.0.0.1:{self.cfg.proxy_port}",
+            }
+            last = None
+            for attempt in range(retries + 1):
+                try:
+                    r = requests.get("https://ipwhois.app/json/", proxies=proxies_cfg, timeout=10)
+                    return exit_label_from_ipwhois(r.json())
+                except Exception as e:  # noqa: BLE001 - transient TLS/timeout; retry
+                    last = e
+                    if attempt < retries:
+                        time.sleep(0.5 * (attempt + 1))
+            log.warning(f"Exit probe failed for {node} after {retries + 1} tries: {last}")
+            return "", ""
+        except Exception as e:
+            log.warning(f"Exit probe error for {node}: {e}")
+            return "", ""
 
     # ----- managed group resolution -----
     def detect_entry_group(self, proxies):
@@ -306,7 +341,7 @@ class ClashController:
         best_in_current = self.select_best_in_group(groups.get(current_group, []), delays)
         if best_in_current:
             return True, best_in_current
-        for group in self.cfg.group_priority:
+        for group in self.derived_chain():
             if group == current_group:
                 continue
             best = self.select_best_in_group(groups.get(group, []), delays)
@@ -369,8 +404,8 @@ end tell
         log.info(f"Total proxies detected: {len(proxies)}")
 
         groups = self.get_all_nodes_by_group(proxies)
-        for g in self.cfg.group_priority:
-            log.info(f"{g} nodes: {len(groups.get(g, []))}")
+        for key in self.derived_chain():
+            log.info(f"{key} nodes: {len(groups.get(key, []))}")
 
         group = self.resolve_managed_group(proxies)
         if group is None:
@@ -383,19 +418,15 @@ end tell
             )
             return False
 
-        enrich_target = (self.cfg.ip_enrich or {}).get("target")
-        if enrich_target and not groups.get(enrich_target) and not dry_run:
-            self.enrich_via_ip(groups, group)
-
         current = proxies[group]["now"]
         current_group = next(
-            (g for g in self.cfg.group_priority if current in groups.get(g, [])), None
-        ) or self.classify_node(current)
+            (k for k in self.derived_chain() if current in groups.get(k, [])), None
+        ) or self.group_key(current)
         log.info(f"Current node: {current} (group: {current_group})")
 
         all_nodes = []
-        for g in self.cfg.group_priority:
-            for n in groups.get(g, []):
+        for key in self.derived_chain():
+            for n in groups.get(key, []):
                 if n not in all_nodes:
                     all_nodes.append(n)
         if not all_nodes:

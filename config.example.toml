@@ -23,23 +23,11 @@ max_switch_per_min = 3
 max_profile_switch_per_30min = 1
 profiles_yaml = "~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles.yaml"
 trial = "试用"                # 命中此正则的节点(如试用)被忽略
-group_priority = ["SG", "Tokyo", "JP_Other"]   # 地区降级优先级(须是下方已定义的地区)
 
-# 地区名 -> 正则,按顺序匹配节点名(先命中者胜,更具体的放前面)。
-# 可自定义任意地区。例如「以美国为主」:
-#   group_priority = ["US", "JP", "SG"]
-#   [clash.regions]
-#   US = "(US|United States|美国|🇺🇸|洛杉矶|圣何塞)"
-#   JP = "(JP|Japan|日本|🇯🇵)"
-#   SG = "(SG|Singapore|新加坡|🇸🇬)"
-[clash.regions]
-SG = "(SG|Singapore|新加坡|🇸🇬)"
-Tokyo = "(Tokyo|东京)"
-JP_Other = "(JP|Japan|日本|🇯🇵)"
+# Region recognition is built in (countries + cities + flags). You normally only
+# set your country preference order; everything is recognized out of the box.
+priority = ["SG", "JP", "US"]
 
-# 可选:当某地区(target)按名字找不到节点时,探测另一地区(source)的节点,
-# 把 IP 归属地命中 match 的挪进 target。删掉本表即可关闭。
-[clash.ip_enrich]
-target = "Tokyo"
-source = "JP_Other"
-match = "tokyo"
+# Optional: enable city-level grouping + stickiness for specific countries.
+# [clash.cities]
+# JP = ["Tokyo", "Osaka"]

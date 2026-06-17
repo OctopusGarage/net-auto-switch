@@ -6,12 +6,11 @@ The pure functions here (parse / render) are unit-tested; the thin I/O wrappers
 
 import json
 import os
-import re
 from dataclasses import dataclass
 
 import yaml
 
-from .config import DEFAULT_REGIONS
+from .geo import catalog as geo_catalog
 
 # Clash Verge keeps its merged runtime config and profiles here on macOS.
 CLASH_VERGE_DIR = os.path.expanduser(
@@ -166,41 +165,53 @@ max_switch_per_min = 3
 max_profile_switch_per_30min = 1
 profiles_yaml = {profiles_yaml}
 trial = "试用"
-group_priority = {group_priority}
-
-# Region name -> regex, matched in order (first match wins).
-[clash.regions]
-{regions_block}
-{ip_enrich_block}"""
-
-
-# Common regions, specific-first (Tokyo before JP), for detecting what's actually
-# in a subscription. The `init` wizard counts node-name matches against these and
-# lets you pick which to prioritize.
-REGION_CATALOG = {
-    "Tokyo": r"(Tokyo|东京)",
-    "JP": r"(JP|Japan|日本|🇯🇵)",
-    "SG": r"(SG|Singapore|新加坡|🇸🇬)",
-    "HK": r"(HK|Hong ?Kong|香港|🇭🇰)",
-    "TW": r"(TW|Taiwan|台湾|台灣|🇹🇼)",
-    "US": r"(US|United States|美国|美國|洛杉矶|圣何塞|🇺🇸)",
-    "KR": r"(KR|Korea|韩国|首尔|🇰🇷)",
-    "UK": r"(UK|United Kingdom|英国|🇬🇧)",
-    "DE": r"(DE|Germany|德国|🇩🇪)",
-}
+priority = {priority}
+{cities_block}"""
 
 
 def detect_regions(node_names, catalog=None):
-    """Count how many node names match each catalog region. Returns a dict of
-    {region: count} for regions with ≥1 match, sorted by count (desc). Pure."""
-    catalog = catalog or REGION_CATALOG
+    """Count node-name matches per country code using the built-in geo catalog.
+    Returns {country: count} for matches, sorted by count desc. Pure."""
+    catalog = catalog or geo_catalog.COUNTRY_RES
     counts = {}
-    for name, rx in catalog.items():
-        cre = re.compile(rx, re.IGNORECASE)
+    for code, cre in catalog.items():
         c = sum(1 for n in node_names if cre.search(n))
         if c:
-            counts[name] = c
+            counts[code] = c
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+
+
+def detect_cities(node_names, catalog=None):
+    """Count node-name matches per city, grouped by country, using the built-in
+    city catalog. Returns {country: {city: count}} — a country appears only if
+    ≥1 of its cities is detected; cities sorted by count desc. Pure."""
+    catalog = catalog or geo_catalog.CITY_RES  # {city: (country, compiled_regex)}
+    by_country = {}
+    for city, (country, cre) in catalog.items():
+        c = sum(1 for n in node_names if cre.search(n))
+        if c:
+            by_country.setdefault(country, {})[city] = c
+    return {
+        country: dict(sorted(cities.items(), key=lambda kv: -kv[1]))
+        for country, cities in by_country.items()
+    }
+
+
+def parse_index_order(text, items):
+    """Parse a typed list of 1-based indices into `items` (whitespace/comma
+    separated) into (ordered_items, invalid_tokens). Order-preserving,
+    de-duplicated; out-of-range/non-numeric tokens go to invalid. Empty text →
+    ([], []) so the caller can substitute a default. Pure."""
+    ordered, invalid, seen = [], [], set()
+    for tok in text.replace(",", " ").split():
+        if tok.isdigit() and 1 <= int(tok) <= len(items):
+            item = items[int(tok) - 1]
+            if item not in seen:
+                seen.add(item)
+                ordered.append(item)
+        else:
+            invalid.append(tok)
+    return ordered, invalid
 
 
 def resolve_priority(text, valid_names):
@@ -222,34 +233,27 @@ def resolve_priority(text, valid_names):
     return resolved, invalid
 
 
-def render_config_toml(detected, group_priority, regions=None):
+def render_config_toml(detected, priority, cities=None):
     """Render a full, commented config.toml from detected values. Pure.
+    `priority` is an ordered list of country codes; `cities` optionally maps a
+    country to an ordered city list (emits a [clash.cities] table)."""
 
-    `regions` is an ordered name->regex map; defaults to SG/Tokyo/JP_Other. The
-    Tokyo IP-enrich table is emitted only for that default JP layout. json.dumps
-    yields valid TOML strings/arrays, safely quoting special characters.
-    """
-
-    # ensure_ascii=False keeps emoji / CJK literal — TOML allows them, but TOML
-    # basic strings reject the surrogate-pair \u escapes json.dumps emits by default.
     def toml_str(v):
         return json.dumps(v, ensure_ascii=False)
 
-    regions = regions or dict(DEFAULT_REGIONS)
-    regions_block = "\n".join(f"{n} = {toml_str(rx)}" for n, rx in regions.items())
-    ip_enrich_block = ""
-    if "Tokyo" in regions and "JP_Other" in regions:
-        ip_enrich_block = (
-            "\n# When Tokyo has no nodes by name, probe JP_Other nodes and move those\n"
-            "# whose IP geolocates to Tokyo into it. Remove this table to disable.\n"
-            '[clash.ip_enrich]\ntarget = "Tokyo"\nsource = "JP_Other"\nmatch = "tokyo"\n'
+    cities = cities or {}
+    cities_block = ""
+    if cities:
+        lines = "\n".join(f"{c} = {toml_str(list(v))}" for c, v in cities.items())
+        cities_block = (
+            "\n# Optional: city-level grouping + stickiness for specific countries.\n"
+            f"[clash.cities]\n{lines}\n"
         )
     return _TEMPLATE.format(
         api=toml_str(detected.api),
         secret=toml_str(detected.secret),
         proxy_port=detected.proxy_port,
         profiles_yaml=toml_str(detected.profiles_yaml),
-        group_priority=toml_str(group_priority),
-        regions_block=regions_block,
-        ip_enrich_block=ip_enrich_block,
+        priority=toml_str(list(priority)),
+        cities_block=cities_block,
     )

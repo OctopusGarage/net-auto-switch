@@ -19,16 +19,20 @@ Order per cycle: **WiFi first** (ensure connectivity), **then Clash** (ensure pr
 | Term | Meaning |
 |------|---------|
 | **Node** | A single Clash proxy (Shadowsocks/Vmess/…). Classified into a Group by its name. |
-| **Group** | Region bucket. Config-driven via `clash.regions` (name → regex); fallback order set by `clash.group_priority`. Default: `SG`, `Tokyo`, `JP_Other` (SG → Tokyo → JP_Other). |
+| **Group** | Two-level region bucket: country (`US`) or country/city (`JP/Tokyo`, `JP/_other`). Recognized from a built-in name catalog (countries + cities + flags); `clash.priority` sets country order, `clash.cities` opts a country into city-level grouping. |
 | **Profile** | A Clash Verge remote subscription. Switched via AppleScript UI as a last resort. |
 | **Delay** | Node latency in ms from Clash's `/delay` probe. `DEAD = 9999` marks unreachable. |
 | **Candidate WiFi** | A network that is both *known* (in the preferred list) and *currently visible*. |
 
 ## Selection algorithm (Clash) — four invariants
 
+Grouping is fully offline (no IP probe). The engine derives a downgrade chain from the
+current node's group: current city → same-country other cities → `country/_other` →
+next country by `clash.priority` order.
+
 1. **Stability first** — current node delay ≤ `delay_limit` → no switch.
-2. **Current group first** — switch within the current region group before leaving it.
-3. **Priority downgrade** — only when the current group has nothing usable, fall through the regions in `group_priority` order.
+2. **Current group first** — switch within the current region group (city or country) before leaving it.
+3. **Priority downgrade** — only when the current group has nothing usable, follow the downgrade chain: same-country remaining cities, then `_other`, then the next country in `clash.priority`.
 4. **No usable node → no switch** (the profile fallback handles the all-dead case).
 
 ## WiFi switching invariants

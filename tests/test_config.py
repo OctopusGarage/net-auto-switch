@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from net_auto_switch.config import ConfigError, load_config
+from net_auto_switch.config import DEFAULT_PRIORITY, ClashConfig, ConfigError, load_config
 
 
 def _write(tmp_path, content):
@@ -26,7 +26,7 @@ def test_load_minimal_applies_defaults(tmp_path):
     assert cfg.wifi.switch_cooldown == 7200
     assert cfg.clash.secret == "abc"
     assert cfg.clash.api == "http://127.0.0.1:9097"
-    assert cfg.clash.group_priority == ["SG", "Tokyo", "JP_Other"]
+    assert cfg.clash.priority == DEFAULT_PRIORITY
 
 
 def test_override_values(tmp_path):
@@ -81,12 +81,12 @@ def test_regions_override(tmp_path):
     """,
     )
     cfg = load_config(str(path))
-    assert cfg.clash.regions == {"US": "(US|美国)", "JP": "(JP|日本)"}
-    assert cfg.clash.group_priority == ["US", "JP"]
+    assert cfg.clash.region_overrides == {"US": "(US|美国)", "JP": "(JP|日本)"}
+    assert cfg.clash.priority == ["US", "JP"]
 
 
 def test_legacy_patterns_translate_to_regions(tmp_path):
-    # Old [clash.patterns] configs keep working: sg/jp/tokyo -> named regions.
+    # Old [clash.patterns] configs keep working: sg/jp/tokyo -> region_overrides.
     path = _write(
         tmp_path,
         """
@@ -99,13 +99,15 @@ def test_legacy_patterns_translate_to_regions(tmp_path):
     """,
     )
     cfg = load_config(str(path))
-    assert cfg.clash.regions["SG"] == "CUSTOM_SG"
-    assert cfg.clash.regions["Tokyo"] == "CUSTOM_TK"
-    assert cfg.clash.regions["JP_Other"] == "(JP|Japan|日本|🇯🇵)"  # untouched -> default
+    assert cfg.clash.region_overrides["SG"] == "CUSTOM_SG"
+    assert cfg.clash.region_overrides["Tokyo"] == "CUSTOM_TK"
+    assert "JP_Other" not in cfg.clash.region_overrides  # not specified -> absent
     assert cfg.clash.trial == "TRIALX"
 
 
-def test_group_priority_undefined_region_raises(tmp_path):
+def test_legacy_group_priority_with_regions_loads(tmp_path):
+    # Legacy config with group_priority + [clash.regions]: loads cleanly.
+    # group_priority maps to priority; regions maps to region_overrides.
     path = _write(
         tmp_path,
         """
@@ -116,8 +118,9 @@ def test_group_priority_undefined_region_raises(tmp_path):
         JP = "(JP|日本)"
     """,
     )
-    with pytest.raises(ConfigError):
-        load_config(str(path))
+    cfg = load_config(str(path))
+    assert cfg.clash.priority == ["US"]
+    assert cfg.clash.region_overrides == {"JP": "(JP|日本)"}
 
 
 def test_switch_cooldown_zero_allowed(tmp_path):
@@ -132,3 +135,39 @@ def test_switch_cooldown_zero_allowed(tmp_path):
     )
     cfg = load_config(str(path))
     assert cfg.wifi.switch_cooldown == 0
+
+
+def test_defaults_have_priority_and_empty_cities():
+    c = ClashConfig()
+    assert isinstance(c.priority, list) and c.priority
+    assert c.cities == {}
+    assert c.region_overrides == {}
+
+
+def test_load_priority_and_cities(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'secret = "x"\n'
+        "[clash]\n"
+        'priority = ["SG", "JP", "US"]\n'
+        "[clash.cities]\n"
+        'JP = ["Tokyo", "Osaka"]\n'
+    )
+    cfg = load_config(str(p))
+    assert cfg.clash.priority == ["SG", "JP", "US"]
+    assert cfg.clash.cities == {"JP": ["Tokyo", "Osaka"]}
+
+
+def test_legacy_group_priority_maps_to_priority(tmp_path):
+    # Real legacy configs use region names (incl. city-level), not country codes.
+    p = tmp_path / "config.toml"
+    p.write_text('secret = "x"\n[clash]\ngroup_priority = ["SG", "Tokyo", "JP_Other"]\n')
+    cfg = load_config(str(p))
+    assert cfg.clash.priority == ["SG", "JP"]  # SG->SG, Tokyo->JP, JP_Other->JP, deduped
+
+
+def test_legacy_group_priority_country_codes(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('secret = "x"\n[clash]\nregions = { JP = "(JP|日本)" }\ngroup_priority = ["JP"]\n')
+    cfg = load_config(str(p))
+    assert cfg.clash.priority == ["JP"]
