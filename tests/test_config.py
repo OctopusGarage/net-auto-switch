@@ -198,3 +198,35 @@ def test_blacklist_defaults_empty():
 
     c = ClashConfig()
     assert c.blacklist == {} and c.state_dir == ""
+
+
+def test_reachability_loaded_from_toml(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text(
+        '[clash]\nsecret = "x"\npriority = ["JP"]\n\n'
+        "[clash.reachability]\n"
+        'required = ["web.telegram.org", "https://youtube.com"]\n'
+        "timeout_ms = 2500\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(str(p))
+    assert cfg.clash.reachability["required"] == ["web.telegram.org", "https://youtube.com"]
+    assert cfg.clash.reachability["timeout_ms"] == 2500
+
+
+def test_reachability_absent_defaults_empty(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[clash]\nsecret = "x"\npriority = ["JP"]\n', encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg.clash.reachability == {}
+
+
+def test_reachability_rejects_non_positive_timeout(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text(
+        '[clash]\nsecret = "x"\npriority = ["JP"]\n\n'
+        '[clash.reachability]\nrequired = ["x"]\ntimeout_ms = 0\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError):
+        load_config(str(p))

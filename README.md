@@ -196,6 +196,22 @@ SG = "(SG|Singapore|新加坡|🇸🇬)"
 Nodes are classified by the **first** matching region (define more specific ones
 first); anything matching none is left untouched.
 
+### `[clash.reachability]` (optional) — require certain domains to be reachable
+
+```toml
+[clash.reachability]
+required = ["web.telegram.org", "youtube.com"]
+timeout_ms = 3000
+```
+
+Each latency-alive candidate is probed against every domain in `required`; a node
+**passes** only if it reaches **all** of them. Within a region group the daemon prefers
+passing nodes over lower-latency nodes that fail (soft priority: falls back to
+lowest-latency when none pass). Region order is unchanged — reachability only reorders
+nodes *within* a group, never across region boundaries. Bare host (`web.telegram.org`) is
+expanded to `https://<host>`; a full URL is used as-is. The probe is read-only and runs
+under `--dry-run`. Empty/absent = feature off (current behaviour preserved).
+
 ## Run as a service (all platforms)
 
 A scheduler/daemon is essential — the switcher only helps if it keeps running. Use

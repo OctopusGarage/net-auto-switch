@@ -63,6 +63,7 @@ class ClashConfig:
     cities: dict = field(default_factory=dict)
     region_overrides: dict = field(default_factory=dict)
     blacklist: dict = field(default_factory=dict)
+    reachability: dict = field(default_factory=dict)
     state_dir: str = ""
 
 
@@ -147,6 +148,8 @@ def load_config(path=None):
 
     if "blacklist" in raw_clash:
         clash.blacklist = dict(raw_clash["blacklist"])
+    if "reachability" in raw_clash:
+        clash.reachability = dict(raw_clash["reachability"])
     clash.state_dir = os.path.dirname(os.path.abspath(resolved))
 
     cfg = Config(
@@ -181,3 +184,10 @@ def _validate(cfg):
     for country in cfg.clash.cities:
         if country not in cfg.clash.priority:
             raise ConfigError(f"clash.cities country '{country}' is not in clash.priority")
+    reach = cfg.clash.reachability or {}
+    required = reach.get("required", [])
+    if not isinstance(required, list) or any(not isinstance(u, str) or not u for u in required):
+        raise ConfigError("clash.reachability.required must be a list of non-empty strings")
+    timeout = reach.get("timeout_ms", 3000)
+    if not isinstance(timeout, int) or timeout <= 0:
+        raise ConfigError("clash.reachability.timeout_ms must be a positive integer")

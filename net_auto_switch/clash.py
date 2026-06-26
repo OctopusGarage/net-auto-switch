@@ -14,6 +14,12 @@ DEAD = 9999
 BLACKLIST_REPROBE_MAX = 5
 
 
+def reachability_url(entry):
+    """Normalise a [clash.reachability] entry to a probe URL: a bare host becomes
+    https://<host>; an entry that already carries a scheme is used as-is."""
+    return entry if "://" in entry else f"https://{entry}"
+
+
 def exit_label_from_ipwhois(j):
     """Pure: parse an ipwhois.app JSON body into (country_code, operator).
 
@@ -136,6 +142,9 @@ class ClashController:
         self._learned = set()
         if self._bl_countries or self._bl_operators:
             self._reload_learned(now=time.time())
+        reach_cfg = cfg.reachability or {}
+        self._reach_required = list(reach_cfg.get("required", []))
+        self._reach_timeout = int(reach_cfg.get("timeout_ms", 3000))
         self._entry_cache: dict = {}
         self._servers = None
         self._switch_times = []
@@ -194,18 +203,31 @@ class ClashController:
         r = requests.get(f"{self.cfg.api}/proxies", headers=self.headers, timeout=5)
         return r.json()["proxies"]
 
-    def test_delay(self, node):
+    def _probe_delay(self, node, url, timeout_ms):
+        """Latency (ms) of fetching `url` through `node` via Clash /delay, or DEAD
+        on any failure / non-positive delay. Read-only (no switch)."""
         try:
             r = requests.get(
                 f"{self.cfg.api}/proxies/{node}/delay",
                 headers=self.headers,
-                params={"url": "http://www.gstatic.com/generate_204", "timeout": 3000},
+                params={"url": url, "timeout": timeout_ms},
                 timeout=5,
             )
             delay = r.json()["delay"]
             return delay if delay > 0 else DEAD
         except Exception:
             return DEAD
+
+    def test_delay(self, node):
+        return self._probe_delay(node, "http://www.gstatic.com/generate_204", 3000)
+
+    def test_reachability(self, node):
+        """True iff `node` reaches ALL configured required URLs. Read-only — same
+        class of side-effect as test_delay, so it is safe under --dry-run."""
+        for entry in self._reach_required:
+            if self._probe_delay(node, reachability_url(entry), self._reach_timeout) >= DEAD:
+                return False
+        return True
 
     def switch_proxy(self, node, group):
         r = requests.put(
@@ -400,25 +422,30 @@ class ClashController:
         return "GLOBAL"
 
     # ----- selection -----
-    def select_best_in_group(self, group_nodes, delays):
+    def select_best_in_group(self, group_nodes, delays, reach=None):
         if not group_nodes:
             return None
         available = [n for n in group_nodes if delays.get(n, DEAD) < DEAD]
         if not available:
             return None
+        if reach:
+            passing = [n for n in available if reach.get(n)]
+            if passing:
+                return min(passing, key=lambda n: delays.get(n, DEAD))
         return min(available, key=lambda n: delays.get(n, DEAD))
 
-    def select_node(self, current, current_group, groups, delays):
+    def select_node(self, current, current_group, groups, delays, reach=None):
         current_delay = delays.get(current, DEAD)
-        if current_delay <= self.cfg.delay_limit:
+        current_ok = current_delay <= self.cfg.delay_limit and (not reach or reach.get(current))
+        if current_ok:
             return False, None
-        best_in_current = self.select_best_in_group(groups.get(current_group, []), delays)
+        best_in_current = self.select_best_in_group(groups.get(current_group, []), delays, reach)
         if best_in_current:
             return True, best_in_current
         for group in self.derived_chain():
             if group == current_group:
                 continue
-            best = self.select_best_in_group(groups.get(group, []), delays)
+            best = self.select_best_in_group(groups.get(group, []), delays, reach)
             if best:
                 return True, best
         return False, None
@@ -510,7 +537,20 @@ end tell
             return False
 
         delays = self.test_all_delays(all_nodes)
-        should_switch, target = self.select_node(current, current_group, groups, delays)
+        reach = {}
+        if self._reach_required:
+            # Steady-state short-circuit: if the current node is fast and reaches
+            # all required domains, no switch can happen (stability holds), so probe
+            # only it and skip the rest. Selection decisions are unaffected.
+            if delays.get(current, DEAD) <= self.cfg.delay_limit:
+                reach[current] = self.test_reachability(current)
+                log.info(f"Reachability {current} -> {'ok' if reach[current] else 'blocked'}")
+            if not reach.get(current):
+                for n in all_nodes:
+                    if n not in reach and delays.get(n, DEAD) < DEAD:
+                        reach[n] = self.test_reachability(n)
+                        log.info(f"Reachability {n} -> {'ok' if reach[n] else 'blocked'}")
+        should_switch, target = self.select_node(current, current_group, groups, delays, reach)
 
         all_dead = not any(delays.get(n, DEAD) < DEAD for n in all_nodes)
         if not should_switch and all_dead and sys.platform != "darwin":
@@ -557,7 +597,9 @@ end tell
                     attempts += 1
                     groups = self.get_all_nodes_by_group(proxies)
                     bad_delays = {**delays, target: DEAD}
-                    should_switch, nxt = self.select_node(target, current_group, groups, bad_delays)
+                    should_switch, nxt = self.select_node(
+                        target, current_group, groups, bad_delays, reach
+                    )
                     if (
                         not should_switch
                         or not nxt

@@ -39,3 +39,12 @@ priority = ["SG", "JP", "US"]
 # countries = ["CN", "HK"]
 # operators = ["腾讯云", "阿里云", "华为云"]
 # relearn_days = 7                 # learned exit-blacklist entries expire after N days
+
+# Optional: require certain domains to be reachable through the chosen node.
+# Each candidate is probed against every URL; a node "passes" only if it reaches
+# ALL of them. Within a region the daemon prefers passing nodes (soft priority:
+# falls back to lowest-latency when none pass). Bare host -> https://<host>; a full
+# URL is used as-is. Empty/absent = feature disabled (current behaviour preserved).
+# [clash.reachability]
+# required = ["web.telegram.org", "youtube.com"]
+# timeout_ms = 3000

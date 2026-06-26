@@ -1,5 +1,6 @@
 from unittest import mock
 
+import net_auto_switch.clash as clash_mod
 from net_auto_switch.clash import (
     ClashController,
     aggregate_connections,
@@ -505,6 +506,30 @@ def test_probe_exit_gives_up_returns_empty(monkeypatch):
     assert c.probe_exit("node", "GLOBAL", retries=2) == ("", "")
 
 
+def test_reachability_url_normalises_bare_host():
+    assert clash_mod.reachability_url("web.telegram.org") == "https://web.telegram.org"
+
+
+def test_reachability_url_keeps_full_url():
+    assert clash_mod.reachability_url("http://example.com/x") == "http://example.com/x"
+
+
+def test_test_reachability_all_pass(monkeypatch):
+    c = make_ctrl(reachability={"required": ["web.telegram.org", "youtube.com"]})
+    monkeypatch.setattr(c, "_probe_delay", lambda node, url, timeout: 120)
+    assert c.test_reachability("n1") is True
+
+
+def test_test_reachability_one_fails(monkeypatch):
+    c = make_ctrl(reachability={"required": ["web.telegram.org", "youtube.com"]})
+
+    def probe(node, url, timeout):
+        return 9999 if "telegram" in url else 120
+
+    monkeypatch.setattr(c, "_probe_delay", probe)
+    assert c.test_reachability("n1") is False
+
+
 def test_is_tun_enabled(monkeypatch):
     import net_auto_switch.clash as clash_mod
 
@@ -621,3 +646,113 @@ def test_run_cycle_learns_bad_exit_and_picks_next(tmp_path, monkeypatch):
     from net_auto_switch import blacklist as bl
 
     assert "JP-a 日本" in bl.load_learned(str(tmp_path / "blacklist.json"), 7, 1e9)
+
+
+# ----- reach dimension in selection -----
+
+
+def test_best_in_group_prefers_reachable_over_faster():
+    c = make_ctrl()
+    # a is faster but unreachable; b is reachable -> pick b
+    got = c.select_best_in_group(["a", "b"], {"a": 50, "b": 200}, {"a": False, "b": True})
+    assert got == "b"
+
+
+def test_best_in_group_soft_fallback_when_none_reach():
+    c = make_ctrl()
+    got = c.select_best_in_group(["a", "b"], {"a": 200, "b": 50}, {"a": False, "b": False})
+    assert got == "b"  # lowest latency among the unreachable
+
+
+def test_best_in_group_ignores_reach_when_empty():
+    c = make_ctrl()
+    assert c.select_best_in_group(["a", "b"], {"a": 50, "b": 200}, {}) == "a"
+
+
+def test_select_node_fast_but_unreachable_switches_to_passing_same_group():
+    c = make_ctrl(priority=["SG"], cities={})
+    groups = {"SG": ["sg1", "sg2"]}
+    delays = {"sg1": 100, "sg2": 150}  # both fast
+    reach = {"sg1": False, "sg2": True}
+    assert c.select_node("sg1", "SG", groups, delays, reach) == (True, "sg2")
+
+
+def test_select_node_fast_unreachable_no_passing_stays():
+    c = make_ctrl(priority=["SG"], cities={})
+    groups = {"SG": ["sg1"]}
+    delays = {"sg1": 100}
+    reach = {"sg1": False}
+    # only candidate is current itself -> select returns (True, "sg1"); run_cycle
+    # treats target == current as no-op. Assert the pure result is self-targeted.
+    assert c.select_node("sg1", "SG", groups, delays, reach) == (True, "sg1")
+
+
+def test_select_node_fast_and_reachable_no_switch():
+    c = make_ctrl(priority=["SG"], cities={})
+    assert c.select_node("sg1", "SG", {"SG": ["sg1"]}, {"sg1": 100}, {"sg1": True}) == (False, None)
+
+
+def test_select_node_does_not_cross_region_for_reach():
+    # SG has a fast-but-unreachable node; US has a reachable node. Region wins:
+    # stay in SG (switch is self-targeted / soft), do NOT jump to US.
+    c = make_ctrl(priority=["SG", "US"], cities={})
+    groups = {"SG": ["sg1"], "US": ["us1"]}
+    delays = {"sg1": 100, "us1": 80}
+    reach = {"sg1": False, "us1": True}
+    assert c.select_node("sg1", "SG", groups, delays, reach) == (True, "sg1")
+
+
+def test_run_cycle_switches_away_from_unreachable_current(monkeypatch):
+    # current jp1 is fast but cannot reach the required domain; jp2 can -> switch.
+    c = make_ctrl(priority=["JP"], cities={}, reachability={"required": ["web.telegram.org"]})
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP-1 日本"},
+        "JP-1 日本": {"type": "Shadowsocks"},
+        "JP-2 日本": {"type": "Shadowsocks"},
+    }
+    monkeypatch.setattr(c, "get_proxies", lambda: proxies)
+    monkeypatch.setattr(c, "get_mode", lambda: "global")
+    monkeypatch.setattr(c, "test_all_delays", lambda n: {x: 100 for x in n})  # both fast
+    monkeypatch.setattr(c, "test_reachability", lambda node: node == "JP-2 日本")
+    monkeypatch.setattr(c, "query_exit", lambda: ("", ""))
+    switched = {}
+    monkeypatch.setattr(c, "switch_proxy", lambda node, group: switched.update(node=node) or True)
+    c.run_cycle(dry_run=False)
+    assert switched.get("node") == "JP-2 日本"
+
+
+def test_run_cycle_reachability_probed_only_for_alive_nodes(monkeypatch):
+    c = make_ctrl(priority=["JP"], cities={}, reachability={"required": ["web.telegram.org"]})
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP-1 日本"},
+        "JP-1 日本": {"type": "Shadowsocks"},
+        "JP-2 日本": {"type": "Shadowsocks"},
+    }
+    monkeypatch.setattr(c, "get_proxies", lambda: proxies)
+    monkeypatch.setattr(c, "get_mode", lambda: "global")
+    # JP-2 is DEAD by latency -> must NOT be probed for reachability
+    monkeypatch.setattr(c, "test_all_delays", lambda n: {"JP-1 日本": 100, "JP-2 日本": 9999})
+    probed = []
+    monkeypatch.setattr(c, "test_reachability", lambda node: probed.append(node) or True)
+    monkeypatch.setattr(c, "query_exit", lambda: ("", ""))
+    monkeypatch.setattr(c, "switch_proxy", lambda node, group: True)
+    c.run_cycle(dry_run=False)
+    assert probed == ["JP-1 日本"]
+
+
+def test_run_cycle_reachability_short_circuits_when_current_passes(monkeypatch):
+    # Current node is fast AND reachable -> only it is probed; siblings skipped.
+    c = make_ctrl(priority=["JP"], cities={}, reachability={"required": ["web.telegram.org"]})
+    proxies = {
+        "GLOBAL": {"type": "Selector", "now": "JP-1 日本"},
+        "JP-1 日本": {"type": "Shadowsocks"},
+        "JP-2 日本": {"type": "Shadowsocks"},
+    }
+    monkeypatch.setattr(c, "get_proxies", lambda: proxies)
+    monkeypatch.setattr(c, "get_mode", lambda: "global")
+    monkeypatch.setattr(c, "test_all_delays", lambda n: {x: 100 for x in n})  # both fast
+    probed = []
+    monkeypatch.setattr(c, "test_reachability", lambda node: probed.append(node) or True)
+    monkeypatch.setattr(c, "switch_proxy", lambda node, group: True)
+    c.run_cycle(dry_run=False)
+    assert probed == ["JP-1 日本"]  # JP-2 never probed because current passed

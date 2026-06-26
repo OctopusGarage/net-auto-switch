@@ -161,6 +161,16 @@ SG = "(SG|Singapore|新加坡|🇸🇬)"
 
 节点按**第一个**命中的地区归类(更具体的写前面);一个都不命中的节点会被忽略。
 
+### `[clash.reachability]`（可选）— 要求必须能到达指定域名
+
+```toml
+[clash.reachability]
+required = ["web.telegram.org", "youtube.com"]
+timeout_ms = 3000
+```
+
+每个存活候选节点都会被探测 `required` 列表中的所有域名；只有**全部**域名都可达的节点才算"通过"。在同一地区组内，守护进程**优先**选取通过的节点（软优先级：若无节点通过，则回退到延迟最低者）。地区优先级不受影响——可达性只在组内排序，不跨地区边界。裸主机名（如 `web.telegram.org`）自动展开为 `https://<host>`；填完整 URL 则原样使用。探测只读，`--dry-run` 下同样运行。空配置/不配置 = 功能关闭（保持现有行为不变）。
+
 ## Production Deployment (macOS launchd)
 
 以 launchd 服务运行,开机自启 + 崩溃自动重启:

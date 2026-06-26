@@ -49,6 +49,16 @@ next country by `clash.priority` order.
 - Each layer's failure is isolated — one layer throwing never stops the other or kills the daemon.
 - Secrets live only in `config.toml` (gitignored), never in source.
 
+### Reachability (optional, `[clash.reachability]`)
+
+When `reachability.required` is non-empty, each latency-alive candidate is probed against
+those URLs (via the same `/delay` endpoint). Within a region group the engine prefers
+nodes that reach **all** required domains, soft-falling-back to lowest-latency when none
+pass. Invariant 1 (stability) is extended: the current node is "keep" only if it is fast
+**and** reaches all required domains. Region order (invariants 2–3) is unchanged —
+reachability only reorders nodes *within* a group, never across groups. Empty/absent =
+feature off. The probe is read-only and runs in `--dry-run` (ADR-0003, ADR-0019).
+
 ## Blacklist (opt-in, `[clash.blacklist]`)
 
 Hard-exclude proxy nodes based on geography or operator. Two tiers:
