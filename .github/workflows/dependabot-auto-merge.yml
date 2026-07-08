@@ -1,8 +1,5 @@
 name: Dependabot auto-merge
 
-# Enables auto-merge on every Dependabot PR. GitHub then merges it
-# automatically once the required status checks (the `test` matrix,
-# CodeQL, scan) pass. No action runs if those checks fail.
 on: pull_request
 
 permissions:
@@ -10,11 +7,20 @@ permissions:
   pull-requests: write
 
 jobs:
-  auto-merge:
+  dependabot:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Auto-merge all Dependabot updates that target the dev branch.
+      # Required CI status checks gate the merge.
       - name: Enable auto-merge
+        if: github.event.pull_request.base.ref == 'dev'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
