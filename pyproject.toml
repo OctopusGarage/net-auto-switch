@@ -45,7 +45,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.15.20",
     "types-pyyaml>=6.0.12.20260518",
-    "types-requests>=2.33.0.20260518",
+    "types-requests>=2.33.0.20260712",
 ]
 
 [tool.pytest.ini_options]
