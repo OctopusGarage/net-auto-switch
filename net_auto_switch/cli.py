@@ -974,7 +974,7 @@ def cmd_dns(argv):
     """Render an opt-in Mihomo DNS merge without changing live settings."""
     p = argparse.ArgumentParser(prog="net-auto-switch dns")
     subcommands = p.add_subparsers(dest="action", required=True)
-    render = subcommands.add_parser("render", help="Render a Mihomo Global Extension Merge")
+    render = subcommands.add_parser("render", help="Render a DNS engine configuration")
     render.add_argument(
         "--engine", choices=["mihomo", "smartdns"], default="mihomo", help="DNS engine"
     )

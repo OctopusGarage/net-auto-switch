@@ -188,6 +188,24 @@ video_domains = ["bilibili.com", "v.qq.com"]
 
 默认海外上游是 Google 和 Cloudflare DoH；`geosite:cn` 与列出的视频域名走指定的国内 DNS。Mihomo 负责缓存，`tcp-concurrent` 会使用最先连接成功的 IP，并不会逐个 `tcping` 后保证选出最低延迟 IP。DNS 上游选择与代理路由是两回事。此命令只生成 YAML，不会修改运行中的 DNS。完整选项见 [`config.example.toml`](config.example.toml)。
 
+### 用 SmartDNS 测速并返回最快 IP
+
+如需持久化 DNS 缓存和按 TCP 连接延迟挑选返回 IP，可生成 [pymumu SmartDNS](https://pymumu.github.io/smartdns/en/configuration/) 配置。在 `[dns]` 之外添加：
+
+```toml
+[smartdns]
+domestic_domain_set = "/etc/smartdns/cn-domains.txt"
+cache_file = "/var/cache/smartdns/net-auto-switch.cache"
+```
+
+`domestic_domain_set` 指向 **SmartDNS 所在设备**上每行一个国内域名的列表；缓存目录也必须对 SmartDNS 可写。生成配置：
+
+```bash
+net-auto-switch dns render --engine smartdns --config config.toml --output smartdns.conf
+```
+
+默认监听 `127.0.0.1:6053`。如果要供局域网设备查询，须在 `[smartdns].listen` 中填写合适的局域网地址和端口。生成的配置把国内域名集和明确列出的视频域名交给 `domestic_upstreams`，其他域名交给 `global_upstreams`，并用 `tcp:443,tcp:80` 测速后返回最快 IP。TCP 建连延迟并不等于网站整体加载速度。该命令不会安装或启动 SmartDNS，也不会修改系统或 Clash 的 DNS 设置；使用 `smartdns-rs` 等其他实现时需核对配置兼容性。
+
 ## Production Deployment (macOS launchd)
 
 以 launchd 服务运行,开机自启 + 崩溃自动重启:

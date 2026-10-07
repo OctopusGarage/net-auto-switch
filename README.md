@@ -113,6 +113,24 @@ The merge leaves `dns.default-nameserver` as configured in your existing profile
 
 The generated merge selects your domestic resolver for `geosite:cn` and the listed video domains. Other names use Google and Cloudflare DoH by default. Mihomo caches answers and `tcp-concurrent` uses the first successful connection among resolved IPs; it does not benchmark and rank every IP. DNS resolver selection is separate from proxy routing. This command only renders YAML; it does not change live DNS settings. See [`config.example.toml`](config.example.toml) for all `[dns]` options.
 
+### SmartDNS for measured fastest-IP answers
+
+For the cache and per-IP TCP checks described above, the command can also render a [pymumu SmartDNS](https://pymumu.github.io/smartdns/en/configuration/) configuration. Add the following alongside `[dns]`:
+
+```toml
+[smartdns]
+domestic_domain_set = "/etc/smartdns/cn-domains.txt"
+cache_file = "/var/cache/smartdns/net-auto-switch.cache"
+```
+
+The domain-set file must exist **on the SmartDNS host** and contain one domestic domain per line; the cache directory must be writable by SmartDNS. Render the config with:
+
+```bash
+net-auto-switch dns render --engine smartdns --config config.toml --output smartdns.conf
+```
+
+The output binds to `127.0.0.1:6053` by default. Set `[smartdns].listen` to a suitable LAN address and port if other devices need to query it. The file routes the CN domain set and explicit `video_domains` to `domestic_upstreams`, uses `global_upstreams` for other domains, persists the cache, and asks SmartDNS to probe returned IPs on TCP ports 443 and 80 before returning the fastest one. TCP connection delay is only one measure of site performance. This command does not install or start SmartDNS or change the system/Clash DNS settings. The output targets pymumu SmartDNS configuration syntax; verify compatibility if using another implementation such as `smartdns-rs`.
+
 ## Safety Design
 
 - `--dry-run` performs checks without switching WiFi, nodes, or profiles.
