@@ -53,6 +53,7 @@ net-auto-switch
 net-auto-switch update
 net-auto-switch whois github.com
 net-auto-switch connections --whois
+net-auto-switch dns render --config config.toml --output dns-merge.yaml
 ```
 
 ## How It Works
@@ -89,6 +90,26 @@ Key areas:
 | Thresholds | Delay limits, packet loss, minimum improvement, required domains. |
 | Rate limits | Max node switches per minute and profile switches per 30 minutes. |
 | Notifications | macOS banner toggles and switch summaries. |
+
+### Optional Mihomo DNS merge
+
+Add a `[dns]` table to `config.toml` with your domestic resolver. For example:
+
+```toml
+[dns]
+domestic_upstreams = ["https://your-cn-resolver.example/dns-query"]
+video_domains = ["bilibili.com", "v.qq.com"]
+```
+
+Then render the configuration:
+
+```bash
+net-auto-switch dns render --config config.toml --output dns-merge.yaml
+```
+
+Apply `dns-merge.yaml` as a **Global Extension Merge** in Clash Verge. If Verge's separate DNS override is enabled, disable it or it may replace the merge's DNS settings. Check Verge's effective Mihomo configuration for `dns.nameserver-policy`, `dns.cache-algorithm`, and `tcp-concurrent`, then try representative CN, video, and overseas names through Mihomo's authenticated `/dns/query?name=example.com&type=A` endpoint. A successful query confirms resolution; the effective configuration confirms which upstream policy is active.
+
+The generated merge selects your domestic resolver for `geosite:cn` and the listed video domains. Other names use Google and Cloudflare DoH by default. Mihomo caches answers and `tcp-concurrent` uses the first successful connection among resolved IPs; it does not benchmark and rank every IP. DNS resolver selection is separate from proxy routing. This command only renders YAML; it does not change live DNS settings. See [`config.example.toml`](config.example.toml) for all `[dns]` options.
 
 ## Safety Design
 

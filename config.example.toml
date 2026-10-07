@@ -48,3 +48,13 @@ priority = ["SG", "JP", "US"]
 # [clash.reachability]
 # required = ["web.telegram.org", "youtube.com"]
 # timeout_ms = 3000
+
+# Optional: render a Mihomo DNS merge with `net-auto-switch dns render`.
+# Replace the example domestic resolver with your real DoH URL or DNS IP.
+# The daemon ignores this table; DNS changes take effect only after you apply
+# the rendered YAML in Clash Verge's Global Extension Merge.
+# [dns]
+# domestic_upstreams = ["https://your-cn-resolver.example/dns-query"]
+# global_upstreams = ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query"]
+# video_domains = ["bilibili.com", "v.qq.com"]
+# domestic_geosite = "cn"
