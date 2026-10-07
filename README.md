@@ -109,6 +109,8 @@ net-auto-switch dns render --config config.toml --output dns-merge.yaml
 
 Apply `dns-merge.yaml` as a **Global Extension Merge** in Clash Verge. If Verge's separate DNS override is enabled, disable it or it may replace the merge's DNS settings. Check Verge's effective Mihomo configuration for `dns.nameserver-policy`, `dns.cache-algorithm`, and `tcp-concurrent`, then try representative CN, video, and overseas names through Mihomo's authenticated `/dns/query?name=example.com&type=A` endpoint. A successful query confirms resolution; the effective configuration confirms which upstream policy is active.
 
+The merge leaves `dns.default-nameserver` as configured in your existing profile. If your DoH upstreams use hostnames, make sure that bootstrap resolver is a reachable IP address so Mihomo can resolve the upstreams themselves.
+
 The generated merge selects your domestic resolver for `geosite:cn` and the listed video domains. Other names use Google and Cloudflare DoH by default. Mihomo caches answers and `tcp-concurrent` uses the first successful connection among resolved IPs; it does not benchmark and rank every IP. DNS resolver selection is separate from proxy routing. This command only renders YAML; it does not change live DNS settings. See [`config.example.toml`](config.example.toml) for all `[dns]` options.
 
 ## Safety Design

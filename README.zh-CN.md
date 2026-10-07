@@ -184,6 +184,8 @@ video_domains = ["bilibili.com", "v.qq.com"]
 
 运行 `net-auto-switch dns render --config config.toml --output dns-merge.yaml`，然后把生成的 YAML 用作 Clash Verge 的**全局扩展配置（Merge）**。如果 Clash Verge 另有 DNS 覆写设置，需关闭该覆写，否则合并配置中的 DNS 设置可能被覆盖。应用后检查实际生效的 Mihomo 配置是否包含 `dns.nameserver-policy`、`dns.cache-algorithm` 和 `tcp-concurrent`，并通过带认证的 `/dns/query?name=example.com&type=A` 查询国内、视频及海外域名。查询成功只能证明解析可用；上游策略以实际生效配置为准。
 
+合并配置不会修改原配置的 `dns.default-nameserver`。如果 DoH 上游使用域名，需确认该引导 DNS 是可达的 IP 地址，以便 Mihomo 先解析上游域名。
+
 默认海外上游是 Google 和 Cloudflare DoH；`geosite:cn` 与列出的视频域名走指定的国内 DNS。Mihomo 负责缓存，`tcp-concurrent` 会使用最先连接成功的 IP，并不会逐个 `tcping` 后保证选出最低延迟 IP。DNS 上游选择与代理路由是两回事。此命令只生成 YAML，不会修改运行中的 DNS。完整选项见 [`config.example.toml`](config.example.toml)。
 
 ## Production Deployment (macOS launchd)

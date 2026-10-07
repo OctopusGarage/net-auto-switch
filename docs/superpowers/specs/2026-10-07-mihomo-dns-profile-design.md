@@ -48,6 +48,8 @@ dns:
 
 Mihomo owns cache lifetime and DNS protocol handling. Domain policies select resolvers; they do not necessarily select the final proxy route. `tcp-concurrent` races connections to returned IPs and uses the first successful one. It is not a periodic `tcping` benchmark and cannot guarantee the lowest latency for every application request. Domains sent through a remote proxy may be resolved by that proxy; local DNS choices matter most for direct connections and proxy-node bootstrap.
 
+The merge leaves the existing `dns.default-nameserver` unchanged. If an upstream DoH address uses a hostname, the effective configuration needs a reachable IP bootstrap resolver for that hostname.
+
 The command does not automatically edit Clash Verge's DNS settings. Documentation will show how to apply the rendered YAML as a Global Extension Merge, disable Verge's separate DNS override if it is enabled, inspect the effective configuration, and use Mihomo's `/dns/query` endpoint to check representative domestic, video, and overseas domains. Verge can reapply its own DNS settings after the merge, so the effective configuration check is required before calling the setup complete.
 
 ## Error handling and verification
