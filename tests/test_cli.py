@@ -1,8 +1,49 @@
 from unittest import mock
 
 import pytest
+import yaml
 
 from net_auto_switch import cli, nodes_src, whois
+
+
+def _dns_config(tmp_path, upstream="https://cn.example/dns-query"):
+    path = tmp_path / "config.toml"
+    path.write_text(f'[dns]\ndomestic_upstreams = ["{upstream}"]\n', encoding="utf-8")
+    return path
+
+
+def test_dns_render_stdout(tmp_path, capsys):
+    config = _dns_config(tmp_path)
+    assert cli.cmd_dns(["render", "--config", str(config)]) == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert yaml.safe_load(output.out)["dns"]["nameserver-policy"] == {
+        "geosite:cn": ["https://cn.example/dns-query"]
+    }
+
+
+def test_dns_render_output_file(tmp_path, capsys):
+    config = _dns_config(tmp_path)
+    output_path = tmp_path / "merge.yaml"
+    assert cli.cmd_dns(["render", "--config", str(config), "--output", str(output_path)]) == 0
+    assert capsys.readouterr().out == ""
+    assert yaml.safe_load(output_path.read_text(encoding="utf-8"))["tcp-concurrent"] is True
+
+
+def test_dns_render_invalid_config_preserves_existing_output(tmp_path, capsys):
+    config = _dns_config(tmp_path, upstream="http://not-doh.example")
+    output_path = tmp_path / "merge.yaml"
+    output_path.write_text("previous", encoding="utf-8")
+    assert cli.cmd_dns(["render", "--config", str(config), "--output", str(output_path)]) == 1
+    assert output_path.read_text(encoding="utf-8") == "previous"
+    assert "domestic_upstreams" in capsys.readouterr().err
+
+
+def test_main_dispatches_dns_render(tmp_path):
+    config = _dns_config(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["dns", "render", "--config", str(config)])
+    assert exc.value.code == 0
 
 
 def _make_install(tmp_path, *, git=False, like_install=True):

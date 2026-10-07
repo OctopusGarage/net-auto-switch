@@ -13,6 +13,7 @@ import time
 
 from .clash import ClashController, aggregate_connections, summarize_connections
 from .config import ClashConfig, ConfigError, load_config
+from .dns_profile import load_dns_profile, render_dns_profile
 from .nodes_src import (
     WhoisProfileError,
     _load_clash_api_profile,
@@ -968,6 +969,42 @@ def cmd_blacklist(argv):
     return 0
 
 
+def cmd_dns(argv):
+    """Render an opt-in Mihomo DNS merge without changing live settings."""
+    p = argparse.ArgumentParser(prog="net-auto-switch dns")
+    subcommands = p.add_subparsers(dest="action", required=True)
+    render = subcommands.add_parser("render", help="Render a Mihomo Global Extension Merge")
+    render.add_argument("--config", default=None, help="Path to config.toml")
+    render.add_argument("--output", default=None, help="Write YAML to this file instead of stdout")
+    args = p.parse_args(argv)
+
+    temporary = None
+    try:
+        output = render_dns_profile(load_dns_profile(args.config))
+        if args.output is None:
+            print(output, end="")
+        else:
+            directory = os.path.dirname(os.path.abspath(args.output))
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=directory,
+                prefix=".dns-",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temporary = f.name
+                f.write(output)
+            os.replace(temporary, args.output)
+        return 0
+    except (ConfigError, OSError) as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 1
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "init":
@@ -984,6 +1021,8 @@ def main(argv=None):
         sys.exit(cmd_service(argv[1:]))
     if argv and argv[0] == "blacklist":
         sys.exit(cmd_blacklist(argv[1:]))
+    if argv and argv[0] == "dns":
+        sys.exit(cmd_dns(argv[1:]))
 
     parser = argparse.ArgumentParser(description="net-auto-switch")
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")
