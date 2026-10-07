@@ -57,6 +57,20 @@ def test_render_uses_custom_global_upstreams_and_geosite(tmp_path):
     assert result["dns"]["nameserver"] == ["https://resolver.example/dns-query"]
 
 
+def test_render_does_not_use_yaml_aliases_for_shared_upstreams(tmp_path):
+    path = _config(
+        tmp_path,
+        """
+        [dns]
+        domestic_upstreams = ["https://cn.example/dns-query"]
+        video_domains = ["bilibili.com"]
+        """,
+    )
+    rendered = render_dns_profile(load_dns_profile(path))
+    assert "&id" not in rendered
+    assert "*id" not in rendered
+
+
 @pytest.mark.parametrize(
     ("dns_table", "message"),
     [

@@ -112,9 +112,9 @@ def load_dns_profile(path=None):
 def render_dns_profile(profile):
     """Return a complete Global Extension Merge YAML for Clash Verge."""
     domestic = profile["domestic_upstreams"]
-    policy = {f"geosite:{profile['domestic_geosite']}": domestic}
+    policy = {f"geosite:{profile['domestic_geosite']}": list(domestic)}
     for domain in profile["video_domains"]:
-        policy[f"+.{domain.lower()}"] = domestic
+        policy[f"+.{domain.lower()}"] = list(domestic)
     return yaml.safe_dump(
         {
             "tcp-concurrent": True,
