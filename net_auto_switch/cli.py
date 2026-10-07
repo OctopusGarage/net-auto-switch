@@ -31,6 +31,7 @@ from .setup import (
     read_subscriptions,
     render_config_toml,
 )
+from .smartdns_profile import load_smartdns_profile, render_smartdns_profile
 
 log = logging.getLogger("net_auto_switch.cli")
 
@@ -974,13 +975,19 @@ def cmd_dns(argv):
     p = argparse.ArgumentParser(prog="net-auto-switch dns")
     subcommands = p.add_subparsers(dest="action", required=True)
     render = subcommands.add_parser("render", help="Render a Mihomo Global Extension Merge")
+    render.add_argument(
+        "--engine", choices=["mihomo", "smartdns"], default="mihomo", help="DNS engine"
+    )
     render.add_argument("--config", default=None, help="Path to config.toml")
     render.add_argument("--output", default=None, help="Write YAML to this file instead of stdout")
     args = p.parse_args(argv)
 
     temporary = None
     try:
-        output = render_dns_profile(load_dns_profile(args.config))
+        if args.engine == "smartdns":
+            output = render_smartdns_profile(load_smartdns_profile(args.config))
+        else:
+            output = render_dns_profile(load_dns_profile(args.config))
         if args.output is None:
             print(output, end="")
         else:

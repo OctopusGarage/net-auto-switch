@@ -46,6 +46,72 @@ def test_main_dispatches_dns_render(tmp_path):
     assert exc.value.code == 0
 
 
+def _smartdns_config(tmp_path, cache_file="/var/cache/smartdns/cache"):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[dns]\ndomestic_upstreams = ["https://cn.example/dns-query"]\n'
+        '[smartdns]\ndomestic_domain_set = "/etc/smartdns/cn.txt"\n'
+        f'cache_file = "{cache_file}"\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_smartdns_render_stdout(tmp_path, capsys):
+    config = _smartdns_config(tmp_path)
+    assert cli.cmd_dns(["render", "--engine", "smartdns", "--config", str(config)]) == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert "cache-persist yes" in output.out
+    assert "response-mode fastest-ip" in output.out
+    assert "nameserver /domain-set:cn/domestic" in output.out
+
+
+def test_smartdns_render_output_file(tmp_path, capsys):
+    config = _smartdns_config(tmp_path)
+    output_path = tmp_path / "smartdns.conf"
+    assert (
+        cli.cmd_dns(
+            [
+                "render",
+                "--engine",
+                "smartdns",
+                "--config",
+                str(config),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+    assert capsys.readouterr().out == ""
+    assert "server-https https://cn.example/dns-query -group domestic" in output_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_smartdns_invalid_config_preserves_existing_output(tmp_path, capsys):
+    config = _smartdns_config(tmp_path, cache_file="relative/cache")
+    output_path = tmp_path / "smartdns.conf"
+    output_path.write_text("previous", encoding="utf-8")
+    assert (
+        cli.cmd_dns(
+            [
+                "render",
+                "--engine",
+                "smartdns",
+                "--config",
+                str(config),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 1
+    )
+    assert output_path.read_text(encoding="utf-8") == "previous"
+    assert "cache_file" in capsys.readouterr().err
+
+
 def _make_install(tmp_path, *, git=False, like_install=True):
     (tmp_path / "config.toml").write_text("secret", encoding="utf-8")
     (tmp_path / ".venv").mkdir()
