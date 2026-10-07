@@ -82,6 +82,14 @@ def test_render_uses_custom_global_upstreams_and_geosite(tmp_path):
             "domesitc_geosite = 'cn'\n",
             "domesitc_geosite",
         ),
+        (
+            "[dns]\ndomestic_upstreams = ['https://bad host/dns-query']\n",
+            "domestic_upstreams",
+        ),
+        (
+            "[dns]\ndomestic_upstreams = ['https://cn.example:bad/dns-query']\n",
+            "domestic_upstreams",
+        ),
     ],
 )
 def test_invalid_dns_profile_raises_clear_error(tmp_path, dns_table, message):

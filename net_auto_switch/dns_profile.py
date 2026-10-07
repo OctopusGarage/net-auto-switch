@@ -21,13 +21,16 @@ _GEOSITE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 def _https_url(value):
     try:
         parsed = urlsplit(value)
+        port = parsed.port
     except ValueError:
         return False
     return (
         parsed.scheme == "https"
         and bool(parsed.hostname)
-        and not parsed.username
-        and not parsed.password
+        and not any(char.isspace() for char in value)
+        and parsed.username is None
+        and parsed.password is None
+        and (port is None or 0 < port < 65536)
         and not parsed.fragment
     )
 
